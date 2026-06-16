@@ -17,6 +17,7 @@ import { createLlmClient } from './llm.js';
 import { createTurnEngine } from './turn.js';
 import { createCombatEngine } from './combat.js';
 import { createQuestEngine } from './quests.js';
+import { loadRuleset } from './ruleset.js';
 import { createDmAgent } from './agents/dm-agent.js';
 import { createNpcAgent } from './agents/npc-agent.js';
 import * as sense from './sense.js';
@@ -26,6 +27,21 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TTRPG_PORT = parseInt(process.env.TTRPG_PORT || '8420', 10);
 const TTRPG_WORLD = process.env.TTRPG_WORLD || path.resolve(__dirname, '..', 'world');
 const TTRPG_SAVE = process.env.TTRPG_SAVE || 'default';
+
+// ---- Ruleset (rules-as-data) ----
+// If TTRPG_RULESET is set, load the bundle BEFORE seeding: it registers component
+// + check-def extensions and supplies the DM system prompt. No ruleset → built-in 5e.
+const TTRPG_RULESET = process.env.TTRPG_RULESET || null;
+let rulesetPrompt = null;
+if (TTRPG_RULESET) {
+  try {
+    const rs = await loadRuleset(TTRPG_RULESET, TTRPG_WORLD);
+    rulesetPrompt = rs.systemPrompt || null;
+    console.log(`[ruleset] Loaded "${(rs.meta && rs.meta.name) || TTRPG_RULESET}" (${(rs.meta && rs.meta.dice) || '?'})`);
+  } catch (e) {
+    console.error(`[ruleset] Failed to load "${TTRPG_RULESET}": ${e.message} — using built-in 5e defaults.`);
+  }
+}
 
 // ---- Session ----
 
@@ -41,7 +57,7 @@ const llm = createLlmClient();
 
 // ---- Agents ----
 
-const dmAgent = createDmAgent({ session, broadcast, applyAndBroadcast, llm });
+const dmAgent = createDmAgent({ session, broadcast, applyAndBroadcast, llm, rulesetPrompt });
 const npcAgent = createNpcAgent({ session, broadcast, applyAndBroadcast, llm });
 
 // ---- Quest + progression engine (deterministic, no LLM) ----

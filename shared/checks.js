@@ -145,6 +145,26 @@ export const CHECK_DEFS = {
   },
 };
 
+// ---- Check registration (EXTENSION SEAM) ----
+
+/**
+ * Register check definitions from a ruleset or campaign.
+ * Deep-merges into CHECK_DEFS. Pure, idempotent.
+ * Mirrors registerComponents in shared/schema.js.
+ *
+ * @param {Record<string,object>} defs — { kind: {dice,comparator,modSource,resolve} }
+ */
+export function registerChecks(defs) {
+  for (const [kind, def] of Object.entries(defs)) {
+    if (CHECK_DEFS[kind]) {
+      // Merge fields into existing definition
+      Object.assign(CHECK_DEFS[kind], def);
+    } else {
+      CHECK_DEFS[kind] = { ...def };
+    }
+  }
+}
+
 // ---- Resolver ----
 
 /**

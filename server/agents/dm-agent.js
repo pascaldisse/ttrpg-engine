@@ -138,8 +138,10 @@ let streamCounter = 0;
  * @param {object} params.llm — LlmClient
  * @returns {{narrate, route, adjudicate, narrateOutcome}}
  */
-export function createDmAgent({ session, broadcast, applyAndBroadcast, llm }) {
-  const systemPrompt = DM_SYSTEM_PROMPT;
+export function createDmAgent({ session, broadcast, applyAndBroadcast, llm, rulesetPrompt }) {
+  // The DM narration voice comes from the loaded ruleset (P7) when present,
+  // else the built-in 5e default. Rules-as-data: the engine names no ruleset.
+  const systemPrompt = rulesetPrompt || DM_SYSTEM_PROMPT;
   const sessionId = process.env.TTRPG_SAVE || 'default';
 
   /**
@@ -327,7 +329,7 @@ export function createDmAgent({ session, broadcast, applyAndBroadcast, llm }) {
     }
 
     const messages = [
-      { role: 'system', content: DM_SYSTEM_PROMPT },
+      { role: 'system', content: systemPrompt },
       ...history,
       { role: 'system', content: (lookText || '(scene unknown)') + checkText + '\n\nNarrate the outcome of the player\'s action, incorporating the check results above. Do NOT roll dice or reference rules — the dice are already rolled. Describe what HAPPENS in the fiction.' },
       { role: 'user', content: actionText },
