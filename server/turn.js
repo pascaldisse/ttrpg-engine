@@ -141,85 +141,20 @@ export function createTurnEngine({ session, broadcast, applyAndBroadcast, dmAgen
         }
       }
 
-      // 3. Adjudicate: structured LLM call
+      // 3. Adjudicate: structured LLM call (the DM's PROPOSED ruling for this action).
       const ruling = await dmAgent.adjudicate(actionOp, presentNpcs);
+      emitTrace({ agent: 'dm', phase: 'adjudicate', summary: summarizeRuling(ruling, actionText), detail: ruling });
 
-      // 3.5 Movement decided by the LLM (natural-language backstop).
-      if (pcId && ruling.move && ruling.move.to) {
-        const dest = ruling.move.to;
-        if (here && isConnected(session.entities, here, dest)) {
-          await doMove(pcId, dest, actionOp);
-          return;
-        }
-        // Destination not reachable from here — tell the player; then narrate normally.
-        applyAndBroadcast([{
-          op: 'event',
-          name: 'system',
-          data: { kind: 'note', text: `(You can't reach "${dest}" directly from here.)` },
-        }], 'system');
-        // fall through to a plain outcome narration (no checks).
-      }
-
-      // 4. speakTo path → NPC conversation (talk-only in P3)
-      if (ruling.speakTo) {
-        await npcAgent.respond(ruling.speakTo, actionText, ruling.note || '');
+      // 3.1 GATE (DMView Slice 2): when paused (autopilot off), don't execute the ruling —
+      //     stage it as a proposal for the DM to approve / reject / regenerate. The
+      //     deterministic fast-paths above (movement/combat/@name) are never gated; only
+      //     LLM rulings are. Autopilot on → execute immediately (the original behavior).
+      if (isPaused()) {
+        stageProposal(actionOp, ruling);
         return;
       }
 
-      // 5. World action: resolve checks via ENGINE
-      const checkResults = [];
-
-      for (const checkReq of ruling.checks || []) {
-        const rng = session.rng(); // deterministic, advances rollCount
-        const result = resolveCheck(
-          {
-            check: 'ability-check', // P3: only ability-check; attack/saving-throw reserved
-            ability: checkReq.ability || 'wis',
-            skill: checkReq.skill,
-            dc: checkReq.dc || 12,
-            reason: checkReq.reason || '',
-          },
-          { stats: pcStats, proficiency: pcProficiency },
-          rng,
-        );
-        result.reason = checkReq.reason || '';
-        result.def = (checkReq.skill || checkReq.ability || 'check');
-        checkResults.push(result);
-
-        // Broadcast roll as event:system
-        applyAndBroadcast([{
-          op: 'event',
-          name: 'system',
-          data: {
-            kind: 'roll',
-            text: formatCheckResult(result),
-            detail: {
-              check: checkReq.ability,
-              skill: checkReq.skill,
-              dc: checkReq.dc,
-              rolls: result.rolls,
-              modifier: result.modifier,
-              total: result.total,
-              success: result.success,
-              crit: result.crit,
-              fumble: result.fumble,
-              reason: checkReq.reason,
-            },
-          },
-        }], 'system');
-      }
-
-      // 6. Narrate the outcome (grounded in the scene + the rolled results).
-      const narrationText = await dmAgent.narrateOutcome(actionOp, checkResults, session._lookCache);
-
-      // 7. Canonize: distill what the narration ACTUALLY established into ops
-      //    ("narrate freely, canonize second"). The narration is already outcome-aware
-      //    (success vs failure), so the recorded consequences match the story — no separate
-      //    success-gating needed. This keeps state in sync with what the player was told.
-      const canonOps = await dmAgent.canonize(actionOp, narrationText, checkResults);
-      if (canonOps && canonOps.length > 0) {
-        await applyConsequences(canonOps, session, applyAndBroadcast);
-      }
+      await executeRuling(actionOp, ruling);
 
     } catch (err) {
       console.error('[turn] Turn engine error:', err.message);
@@ -238,7 +173,181 @@ export function createTurnEngine({ session, broadcast, applyAndBroadcast, dmAgen
     }
   }
 
-  return { runTurn };
+  /**
+   * Execute an adjudicated ruling: movement backstop → speakTo → checks → narrate →
+   * canonize. Split out from runTurnInner so the DM gate can defer it until approval.
+   * Re-derives PC/location context at call time (state may have advanced since the
+   * proposal was staged).
+   * @param {object} actionOp
+   * @param {object} ruling — from dmAgent.adjudicate()
+   */
+  async function executeRuling(actionOp, ruling) {
+    const actionText = (actionOp.text || '').trim();
+
+    const pcEntry = [...session.entities.entries()].find(
+      ([_id, comps]) => (comps.identity || {}).kind === 'pc'
+    );
+    const pcId = pcEntry ? pcEntry[0] : null;
+    const pcStats = (pcEntry && pcEntry[1].stats) || {};
+    const pcProficiency = pcStats.proficiency || 2;
+    const here = pcLocationId(session.entities);
+    session._lookCache = senseLook(session);
+
+    // 3.5 Movement decided by the LLM (natural-language backstop).
+    if (pcId && ruling.move && ruling.move.to) {
+      const dest = ruling.move.to;
+      if (here && isConnected(session.entities, here, dest)) {
+        await doMove(pcId, dest, actionOp);
+        return;
+      }
+      applyAndBroadcast([{
+        op: 'event', name: 'system',
+        data: { kind: 'note', text: `(You can't reach "${dest}" directly from here.)` },
+      }], 'system');
+      // fall through to a plain outcome narration (no checks).
+    }
+
+    // 4. speakTo path → NPC conversation
+    if (ruling.speakTo) {
+      emitTrace({ agent: 'npc', phase: 'respond', summary: `${ruling.speakTo} responds to the player`, detail: { note: ruling.note || '' } });
+      await npcAgent.respond(ruling.speakTo, actionText, ruling.note || '');
+      return;
+    }
+
+    // 5. World action: resolve checks via ENGINE
+    const checkResults = [];
+    for (const checkReq of ruling.checks || []) {
+      const rng = session.rng(); // deterministic, advances rollCount
+      const result = resolveCheck(
+        {
+          check: 'ability-check',
+          ability: checkReq.ability || 'wis',
+          skill: checkReq.skill,
+          dc: checkReq.dc || 12,
+          reason: checkReq.reason || '',
+        },
+        { stats: pcStats, proficiency: pcProficiency },
+        rng,
+      );
+      result.reason = checkReq.reason || '';
+      result.def = (checkReq.skill || checkReq.ability || 'check');
+      checkResults.push(result);
+
+      applyAndBroadcast([{
+        op: 'event', name: 'system',
+        data: {
+          kind: 'roll',
+          text: formatCheckResult(result),
+          detail: {
+            check: checkReq.ability, skill: checkReq.skill, dc: checkReq.dc,
+            rolls: result.rolls, modifier: result.modifier, total: result.total,
+            success: result.success, crit: result.crit, fumble: result.fumble,
+            reason: checkReq.reason,
+          },
+        },
+      }], 'system');
+    }
+
+    // 6. Narrate the outcome (grounded in the scene + the rolled results).
+    const narrationText = await dmAgent.narrateOutcome(actionOp, checkResults, session._lookCache);
+
+    // 7. Canonize: distill what the narration established into ops.
+    const canonOps = await dmAgent.canonize(actionOp, narrationText, checkResults);
+    emitTrace({ agent: 'dm', phase: 'canonize', summary: `${(canonOps || []).length} consequence op(s)`, detail: canonOps || [] });
+    if (canonOps && canonOps.length > 0) {
+      await applyConsequences(canonOps, session, applyAndBroadcast);
+    }
+  }
+
+  // ---- DMView: pause/propose gate (Slice 2) + agent traces (Slice 3) ----
+
+  const pendingProposals = new Map(); // id → {id, actionOp, ruling, actionText, summary, createdAt}
+  let proposalSeq = 0;
+
+  /** True when the DM gate is engaged (dm-control.dmControl.autopilot === false). */
+  function isPaused() {
+    const ctrl = session.entities.get('dm-control');
+    return !!(ctrl && ctrl.dmControl && ctrl.dmControl.autopilot === false);
+  }
+
+  /** Flip autopilot on/off (merge onto the dm-control singleton; broadcast to all). */
+  function setAutopilot(on) {
+    applyAndBroadcast([{ op: 'merge', id: 'dm-control', component: 'dmControl', value: { autopilot: !!on } }], 'dm');
+  }
+
+  /** One-line human summary of a ruling for the proposal card. */
+  function summarizeRuling(ruling, actionText) {
+    if (ruling.move && ruling.move.to) return `Move the party → ${ruling.move.to}`;
+    if (ruling.speakTo) return `${ruling.speakTo} answers the player`;
+    const parts = [];
+    if (ruling.checks && ruling.checks.length) {
+      parts.push('roll ' + ruling.checks.map(c => `${c.ability || '?'}${c.skill ? '/' + c.skill : ''} DC${c.dc || '?'}`).join(', '));
+    }
+    if (ruling.ops && ruling.ops.length) parts.push(`${ruling.ops.length} consequence op(s)`);
+    return parts.length ? parts.join(' · ') : 'Narrate the outcome';
+  }
+
+  /** Emit a DM-only trace of an agent decision / tool call (Slice 3). */
+  function emitTrace(trace) {
+    broadcast({ type: 'trace', trace: { ...trace, t: Date.now() } }, 'dm');
+  }
+
+  /** Stage a ruling as a pending proposal + notify the DM (+ a vague note to players). */
+  function stageProposal(actionOp, ruling) {
+    const id = `prop-${++proposalSeq}`;
+    const actionText = (actionOp.text || '').trim();
+    const summary = summarizeRuling(ruling, actionText);
+    pendingProposals.set(id, { id, actionOp, ruling, actionText, summary, createdAt: Date.now() });
+    broadcast({ type: 'proposal', proposal: { id, actionText, summary, ruling } }, 'dm');
+    applyAndBroadcast([{ op: 'event', name: 'system', data: { kind: 'note', text: '(The dungeon master considers your action…)' } }], 'system');
+  }
+
+  /** Pending proposals (for a DM that connects AFTER they were staged). */
+  function listProposals() {
+    return [...pendingProposals.values()].map(({ id, actionText, summary, ruling }) => ({ id, actionText, summary, ruling }));
+  }
+
+  /**
+   * DM resolves a proposal: 'approve' → execute the ruling, 'reject' → drop it,
+   * 'regenerate' → re-adjudicate and replace it.
+   * @param {string} id
+   * @param {'approve'|'reject'|'regenerate'} action
+   */
+  async function resolveProposal(id, action) {
+    const pending = pendingProposals.get(id);
+    if (!pending) return;
+
+    if (action === 'reject') {
+      pendingProposals.delete(id);
+      broadcast({ type: 'proposal-resolved', id, action: 'reject' }, 'dm');
+      applyAndBroadcast([{ op: 'event', name: 'system', data: { kind: 'note', text: '(The dungeon master lets the moment pass.)' } }], 'system');
+      return;
+    }
+
+    if (action === 'regenerate') {
+      const presentNpcs = sensePresentAgents(session);
+      const ruling = await dmAgent.adjudicate(pending.actionOp, presentNpcs);
+      const summary = summarizeRuling(ruling, pending.actionText);
+      emitTrace({ agent: 'dm', phase: 'adjudicate', summary: `(regen) ${summary}`, detail: ruling });
+      pendingProposals.set(id, { ...pending, ruling, summary });
+      broadcast({ type: 'proposal', proposal: { id, actionText: pending.actionText, summary, ruling } }, 'dm');
+      return;
+    }
+
+    // approve
+    pendingProposals.delete(id);
+    broadcast({ type: 'proposal-resolved', id, action: 'approve' }, 'dm');
+    try {
+      await executeRuling(pending.actionOp, pending.ruling);
+    } finally {
+      if (questEngine) {
+        try { await questEngine.evaluate(); }
+        catch (e) { console.error('[turn] quest evaluate error:', e.message); }
+      }
+    }
+  }
+
+  return { runTurn, isPaused, setAutopilot, resolveProposal, listProposals };
 }
 
 /**

@@ -11,20 +11,29 @@ export class NetClient {
   /**
    * @param {object} store — SessionStore instance
    * @param {string} [who] — player name
+   * @param {object} [opts]
+   * @param {string} [opts.seat] — 'player' (default) | 'dm' | 'npc' | 'spectator'
    */
-  constructor(store, who = 'player') {
+  constructor(store, who = 'player', opts = {}) {
     this.store = store;
     this.who = who;
+    this.seat = opts.seat || 'player';
     this.ws = null;
     this._reconnectDelay = 500;
     this._presenceId = `presence-${Math.random().toString(36).slice(2, 8)}`;
     this._connected = false;
     this._onConnectedCallbacks = [];
+    this._onServerMessage = null; // for non-store messages (proposal/trace/…)
   }
 
   /** Called once when connection is established (or re-established). */
   onConnected(fn) {
     this._onConnectedCallbacks.push(fn);
+  }
+
+  /** Register a handler for server messages that aren't snapshot/ops (proposal, trace, …). */
+  onServerMessage(fn) {
+    this._onServerMessage = fn;
   }
 
   connect() {
@@ -66,6 +75,9 @@ export class NetClient {
         console.error('[net] Server error:', msg.error);
         return;
       }
+
+      // Anything else (proposal / trace / proposal-resolved) → DMView handler.
+      if (this._onServerMessage) this._onServerMessage(msg);
     };
 
     this.ws.onclose = () => {
@@ -84,9 +96,9 @@ export class NetClient {
     const hello = {
       type: 'hello',
       presence: {
-        seat: 'player',
+        seat: this.seat,
         who: this.who,
-        mode: 'play',
+        mode: this.seat === 'dm' ? 'review' : 'play',
       },
       presenceId: this._presenceId,
     };
@@ -113,6 +125,15 @@ export class NetClient {
       ops,
       from: this.who,
     }));
+  }
+
+  /**
+   * Send a DMView control message (DM seat only, enforced server-side).
+   * @param {object} obj — e.g. {action:'setAutopilot', value:false} or {action:'approve', proposalId}
+   */
+  sendControl(obj) {
+    if (!this.ws || this.ws.readyState !== 1) return;
+    this.ws.send(JSON.stringify({ type: 'dm-control', ...obj }));
   }
 
   /**

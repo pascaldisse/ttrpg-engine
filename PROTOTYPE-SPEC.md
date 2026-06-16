@@ -367,7 +367,19 @@ Progress is also tracked in agent memory (`ttrpg-engine-project.md`).
     broadcast is now seat-aware (`broadcast(msg, audience)`, per-client redaction; `ws._seat` set from the `hello`
     presence; DM re-gets a full snapshot post-hello). Closes the player-secret leak. test-visibility 17 +
     smoke-dmview-s1 3 (player ws gets stripped npc-marta, DM ws gets full).
-  - Slices 2–4 (next): the propose/approve gate (pause), agent-trace events (DM-only), and the DMView client page.
+  - **Slice 2 ✅ — pause/propose gate.** `dm-control` singleton (`dmControl.autopilot`, default true = today's
+    auto-apply). `server/turn.js` splits adjudicate (decision) from `executeRuling` (effects); when paused the
+    ruling is staged as an in-memory **proposal** (DM-only `{type:'proposal'}`) instead of executed; the DM
+    approves (→ execute), rejects (→ drop), or regenerates (→ re-adjudicate). `setAutopilot`/`resolveProposal`/
+    `listProposals` exposed; `server/index.js` routes DM-seat `{type:'dm-control'}` messages and replays pending
+    proposals to a DM that joins late.
+  - **Slice 3 ✅ — agent-trace events.** The turn engine emits DM-only `{type:'trace'}` events at each agent
+    decision/tool-call (adjudicate ruling, NPC respond, canonize ops) for the activity feed (reveal-detail).
+  - **Slice 4 ✅ — DMView client page.** `client/dm.html` + `dm.js` + `kernel/dm-view.js`, a Vite MPA entry that
+    joins as `seat:'dm'`. Panels: autopilot toggle, Proposals (approve/reject/regenerate + reveal ruling), Agent
+    activity (traces), Turn order (combat initiative reorder / set-current via `encounter` merge ops), and the
+    full-store entity inspector. `net.js` parameterized by seat + `onServerMessage`/`sendControl`. Visit `/dm.html`.
+    Verified by test-dm-client 6 (headless DOM: panels render + controls dispatch) + smoke-dmview-s2 3 (server gate).
 
 **Deferred (explicitly later):** atmosphere (image/music — the old "P4"); the human **DM seat** (review/override/mood
 knob/canon-confirm); **multiplayer** (last). The architecture keeps all three open — see DESIGN-NOTES #1

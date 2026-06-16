@@ -1,4 +1,5 @@
 import { defineConfig } from 'vite';
+import { fileURLToPath } from 'node:url';
 
 export default defineConfig({
   root: 'client',
@@ -7,5 +8,14 @@ export default defineConfig({
   },
   server: {
     port: Number(process.env.TTRPG_CLIENT_PORT ?? 5173),
+  },
+  build: {
+    // Multi-page: the player client (index.html) + the DMView (dm.html).
+    rollupOptions: {
+      input: {
+        main: fileURLToPath(new URL('./client/index.html', import.meta.url)),
+        dm: fileURLToPath(new URL('./client/dm.html', import.meta.url)),
+      },
+    },
   },
 });

@@ -141,6 +141,13 @@ export const SCHEMA = {
       allies:    { doc: 'Entity ids on the party side (incl. the PC).' },
     },
   },
+  dmControl: {
+    doc: 'DMView control state (singleton entity "dm-control"). Drives the propose→approve gate.',
+    default: { autopilot: true },
+    fields: {
+      autopilot: { doc: 'true = LLM beats auto-apply (autopilot); false = paused, DM must approve each proposed beat.' },
+    },
+  },
   persist: {
     doc: 'Entities with this component survive reset. No fields — presence is the flag.',
     default: {},

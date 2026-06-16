@@ -52,6 +52,15 @@ session.seedFromWorld(TTRPG_WORLD);
 session.load();
 console.log(`[session] Ready — ${session.entities.size} entities, counter ${session.counter}`);
 
+// DMView control singleton (autopilot on by default → today's auto-apply behavior).
+// Spawned directly on the store (no clients are connected yet at boot).
+if (!session.entities.has('dm-control')) {
+  session.applyOps([{
+    op: 'spawn', id: 'dm-control',
+    components: { dmControl: { autopilot: true }, identity: { name: 'DM Control', kind: 'world-state' } },
+  }], 'system');
+}
+
 // ---- LLM Client ----
 
 const llm = createLlmClient();
@@ -276,6 +285,12 @@ wss.on('connection', (ws) => {
         const snap = redactForSeat(session.snapshot(), ws._seat);
         if (snap) ws.send(JSON.stringify(snap));
       }
+      // A DM joining after proposals were staged needs to see the backlog.
+      if (ws._seat === 'dm') {
+        for (const proposal of turnEngine.listProposals()) {
+          ws.send(JSON.stringify({ type: 'proposal', proposal }));
+        }
+      }
       return;
     }
 
@@ -288,6 +303,22 @@ wss.on('connection', (ws) => {
       }
       // Trigger turn engine for action ops (fire-and-forget)
       triggerTurns(msg.ops || [], msg.from || 'ws-client');
+      return;
+    }
+
+    // DMView control (Slice 2) — DM seats only: toggle autopilot, resolve proposals.
+    if (msg.type === 'dm-control') {
+      if (ws._seat !== 'dm') {
+        ws.send(JSON.stringify({ type: 'error', error: 'dm-control requires a DM seat' }));
+        return;
+      }
+      if (msg.action === 'setAutopilot') {
+        turnEngine.setAutopilot(!!msg.value);
+        return;
+      }
+      // approve | reject | regenerate
+      turnEngine.resolveProposal(msg.proposalId, msg.action)
+        .catch(err => console.error('[dm-control] resolve error:', err.message));
       return;
     }
   });

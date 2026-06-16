@@ -12,7 +12,13 @@ npm run dev
 ```
 
 - Server: `http://localhost:8420` (WS + HTTP)
-- Client: `http://localhost:5173` (Vite dev server)
+- Player client: `http://localhost:5173` (Vite dev server)
+- **DMView** (DM control surface): `http://localhost:5173/dm.html`
+
+The **DMView** joins as the `dm` seat and exposes: an **autopilot** toggle (when off, the DM reviews each LLM
+beat via a propose→approve gate — approve / reject / regenerate), an **agent-activity** feed of LLM decisions
+and tool calls, **combat turn-order** override, and a full entity inspector. Players never receive the DM-only
+machinery or NPC secrets — the server filters every message per seat (`shared/visibility.js`).
 
 ## Configuration
 
