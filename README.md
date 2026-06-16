@@ -24,6 +24,10 @@ By default the server loads the campaign from `./world/`.
 | `TTRPG_PORT` | `8420` | Server HTTP + WS port |
 | `TTRPG_CLIENT_PORT` | `5173` | Vite dev server port |
 | `TTRPG_SAVE` | `default` | Session save slot name |
+| `TTRPG_RULESET` | _(none)_ | Ruleset bundle to load at boot from `world/ruleset/<id>/` (e.g. `srd5e`, `dsa5`). Unset → built-in 5e. |
+| `TTRPG_SEED` | `42` | PRNG seed for reproducible sessions (dice, etc.). A loaded save wins. |
+| `LLM_PROVIDER` | `deepseek` | LLM backend: `deepseek` or `mock` (offline, no key). |
+| `DEEPSEEK_API_KEY` | _(none)_ | DeepSeek key — read **only** from env (gitignored `.env`); never logged or sent to the client. |
 
 ## HTTP API
 
@@ -49,6 +53,22 @@ node tools/patch.mjs events 0
 # Get schema
 curl localhost:8420/schema
 ```
+
+### Generate a world
+
+Generate a brand-new world as data (procgen skeleton + an LLM pass that "charges it with meaning"),
+written to a scene JSON in the exact shape the engine seeds from — run once, then commit/hand-edit/play it.
+
+```bash
+# Offline, deterministic (mock LLM):
+npm run worldgen -- --provider mock --theme "haunted salt marsh" --size small --out world/scenes/marsh.json
+
+# With DeepSeek (key loaded from .env):
+npm run worldgen -- --theme "sunbaked frontier town" --size medium --seed 7
+```
+
+Flags: `--theme`, `--size small|medium|large`, `--locations <n>`, `--seed <n>`, `--provider mock|deepseek`, `--out <path>`.
+Point `TTRPG_WORLD` at a directory containing the generated `scenes/` to play it.
 
 ## How to extend
 
