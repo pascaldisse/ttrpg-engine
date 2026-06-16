@@ -298,8 +298,9 @@ iterating.
 
 ## 13. Phased build path & progress (reprioritized — "fully functional game FIRST"; multiplayer last)
 
-**Status: P0–P7 DONE, committed** (git `3635b7e` P0–P2, `9600972` P3, `8865abf` P4, `cf0559a`+`f9df809` P5,
-`ffa8ffd` P6, `513d28a` P7; P0–P4 verified on real DeepSeek, P5/P6/P7 are deterministic/no-LLM).
+**Status: P0–P8 DONE — the loop-first roadmap is COMPLETE, committed** (git `3635b7e` P0–P2, `9600972` P3,
+`8865abf` P4, `cf0559a`+`f9df809` P5, `ffa8ffd` P6, `513d28a` P7, `f34a4c2` P8; P0–P4 verified on real DeepSeek,
+P5/P6/P7 deterministic/no-LLM, P8's skeleton is deterministic + the charge pass is LLM-or-mock).
 Progress is also tracked in agent memory (`ttrpg-engine-project.md`).
 
 - **P0 — Skeleton (the GAIA spine) ✅** WS+HTTP hub, `Session` store, op apply/broadcast/journal, snapshot,
@@ -335,8 +336,16 @@ Progress is also tracked in agent memory (`ttrpg-engine-project.md`).
   `registerComponents`/`registerChecks` + DM system prompt). Proven on **srd5e** (d20-vs-DC) AND **dsa5**
   (3d20 roll-under + Quality Levels) — same engine, rules as data; each check def brings its own `resolve()`.
 
-**Remaining (game-functional-first):**
-- **P8 — World generation (NEXT):** procgen bones + LLM "charges it with meaning", generated once → fixed data.
+- **P8 — World generation ✅** generate a world AS DATA. Stage 1 (procgen bones, pure/deterministic):
+  `shared/worldgen.js` `generateSkeleton(config, rng)` lays a connected, bidirectional location graph with a PC,
+  NPCs, enemies (one shared lair), items (one prize), and a quest whose triggers reference real generated ids.
+  Stage 2 (charge with meaning): `server/worldgen.js` `chargeWorld`/`generateWorld` fill names/descriptions/persona/
+  knowledge/art per-location via the LLM (best-effort, deterministic placeholder fallback; exits relabeled from named
+  targets), `shared/worldcheck.js` `validateWorld` enforces referential integrity, `writeWorld` emits a scene JSON in
+  the **exact shape the Session seeds from**. CLI `tools/worldgen.mjs` (`npm run worldgen`); mock `worldgen` LLM branch
+  for offline runs. Generated once → fixed data, indistinguishable from a hand-authored world.
+
+**Remaining (game-functional-first):** none — the loop-first roadmap (P0–P8) is complete.
 
 **Deferred (explicitly later):** atmosphere (image/music — the old "P4"); the human **DM seat** (review/override/mood
 knob/canon-confirm); **multiplayer** (last). The architecture keeps all three open — see DESIGN-NOTES #1
