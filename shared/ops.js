@@ -64,9 +64,52 @@ const resetSchema = z.object({
   scene: z.string().optional(),
 });
 
+// ---- Semantic ops (expanded before apply via effects.js) ----
+// These validate the LLM's output shape but are NOT entity mutators themselves.
+// Effects.js expands them into canonical spawn/set/merge/despawn ops.
+// EXTENSION SEAM: rulesets add semantic ops here and in effects.js SEMANTIC_HANDLERS.
+
+const damageSchema = z.object({
+  op: z.literal('damage'),
+  id: z.string(),
+  amount: z.number().min(0),
+});
+
+const healSchema = z.object({
+  op: z.literal('heal'),
+  id: z.string(),
+  amount: z.number().min(0),
+});
+
+const giveItemSchema = z.object({
+  op: z.literal('giveItem'),
+  id: z.string(),
+  item: z.object({ id: z.string(), name: z.string().optional(), qty: z.number().optional() }),
+});
+
+const takeItemSchema = z.object({
+  op: z.literal('takeItem'),
+  id: z.string(),
+  item: z.object({ id: z.string() }),
+});
+
+const moveSchema = z.object({
+  op: z.literal('move'),
+  id: z.string(),
+  to: z.string(),
+});
+
+const setFlagSchema = z.object({
+  op: z.literal('setFlag'),
+  key: z.string(),
+  value: z.unknown(),
+  id: z.string().optional(),
+});
+
 export const opUnion = z.discriminatedUnion('op', [
   spawnSchema, setSchema, mergeSchema, despawnSchema,
   eventSchema, actionSchema, rollSchema, resetSchema,
+  damageSchema, healSchema, giveItemSchema, takeItemSchema, moveSchema, setFlagSchema,
 ]);
 
 const batchSchema = z.array(opUnion);

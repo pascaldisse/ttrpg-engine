@@ -236,11 +236,22 @@ export class MockLlmClient {
 
   /**
    * Returns a deterministic result branching on opts.role:
+   *   - 'adjudicate' → P3: keyword-heuristic ruling
    *   - 'routing' → returns {targets:[<first present npc>], note:''}
    *   - default → legacy P1 op batch
    */
   async structured(messages, _schema, opts = {}) {
     const actionText = this.#extractActionText(messages);
+
+    // ---- P3: Adjudicate branch ----
+    if (opts.role === 'adjudicate') {
+      return this.#mockAdjudicate(actionText, messages);
+    }
+
+    // ---- P3: Canonize branch (narrate-then-canonize) ----
+    if (opts.role === 'canonize') {
+      return this.#mockCanonize(actionText);
+    }
 
     // Routing mode: return JSON routing result
     if (opts.role === 'routing') {
@@ -277,6 +288,138 @@ export class MockLlmClient {
         checks: [],
       }),
       usage: { prompt_tokens: 100, completion_tokens: 50 },
+    };
+  }
+
+  /**
+   * Deterministic canonize for offline testing — extract consequence ops from keywords.
+   * Honors outcome: if the (outcome-aware) narration/results mention failure, record nothing.
+   */
+  #mockCanonize(actionText) {
+    const txt = (actionText || '').toLowerCase();
+    if (/failure|→ miss|fumble|failed|misses/.test(txt)) {
+      return { parsed: { ops: [] }, raw: '{"ops":[]}', usage: { prompt_tokens: 60, completion_tokens: 5 } };
+    }
+    let ops = [];
+    if (txt.includes('attack') || txt.includes('strike') || txt.includes('swing')) {
+      ops = [{ op: 'damage', id: 'npc-marta', amount: 4 }];
+    } else if (txt.includes('torch')) {
+      ops = [{ op: 'giveItem', id: 'pc-hero', item: { id: 'item-torch', name: 'Torch' } }];
+    } else if (txt.includes('search') || txt.includes('examine') || txt.includes('force') ||
+               txt.includes('pick') || txt.includes('lock') || txt.includes('strongbox') ||
+               txt.includes('box') || txt.includes('key')) {
+      ops = [{ op: 'giveItem', id: 'pc-hero', item: { id: 'item-key', name: 'Brass Key' } }];
+    }
+    return { parsed: { ops }, raw: JSON.stringify({ ops }), usage: { prompt_tokens: 80, completion_tokens: 20 } };
+  }
+
+  /**
+   * Deterministic adjudication for offline testing.
+   * Keyword heuristics on player text.
+   */
+  #mockAdjudicate(actionText, messages) {
+    const txt = (actionText || '').toLowerCase();
+
+    // ---- Action checks (before conversation routing) ----
+
+    // Attack keywords
+    if (txt.includes('attack') || txt.includes('strike') || txt.includes('hit') || txt.includes('swing')) {
+      return this.#jsonResult({
+        speakTo: null,
+        checks: [{ ability: 'str', skill: undefined, dc: 13, reason: 'attacking' }],
+        ops: [{ op: 'damage', id: 'npc-marta', amount: 4 }],
+      });
+    }
+
+    // Search/examine/investigate
+    if (txt.includes('search') || txt.includes('examine') || txt.includes('investigate')) {
+      return this.#jsonResult({
+        speakTo: null,
+        checks: [{ ability: 'wis', skill: 'perception', dc: 12, reason: 'searching the area' }],
+        ops: [{ op: 'giveItem', id: 'pc-hero', item: { id: 'item-key', name: 'Brass Key' } }],
+      });
+    }
+
+    // Force/break/smash
+    if (txt.includes('force') || txt.includes('break') || txt.includes('smash') || txt.includes('bash')) {
+      return this.#jsonResult({
+        speakTo: null,
+        checks: [{ ability: 'str', skill: 'athletics', dc: 14, reason: 'forcing it open' }],
+        ops: [{ op: 'giveItem', id: 'pc-hero', item: { id: 'item-key', name: 'Brass Key' } }],
+      });
+    }
+
+    // Pick lock
+    if (txt.includes('pick') && (txt.includes('lock') || txt.includes('chest') || txt.includes('box'))) {
+      return this.#jsonResult({
+        speakTo: null,
+        checks: [{ ability: 'dex', skill: 'sleight of hand', dc: 15, reason: 'picking the lock' }],
+        ops: [{ op: 'giveItem', id: 'pc-hero', item: { id: 'item-key', name: 'Brass Key' } }],
+      });
+    }
+
+    // Take/grab/pick up → no-check op
+    if (txt.includes('take') || txt.includes('grab') || txt.includes('pick up')) {
+      return this.#jsonResult({
+        speakTo: null,
+        checks: [],
+        ops: [{ op: 'giveItem', id: 'pc-hero', item: { id: 'item-torch', name: 'Torch' } }],
+      });
+    }
+
+    // Pure look/observe → narration only (no checks, no ops)
+    if (txt.startsWith('look') || txt.startsWith('observe') || txt.startsWith('watch') || txt === 'look') {
+      return this.#jsonResult({ speakTo: null, checks: [], ops: [] });
+    }
+
+    // ---- Conversation routing ----
+    const npcNames = this.#extractNpcNames(messages);
+    const greetMatch = txt.match(/^(hello|hi|hey|greetings|good)\b/);
+    const npcNameInText = npcNames.find(n => txt.includes(n.toLowerCase()));
+
+    if (greetMatch || npcNameInText) {
+      const firstNpc = npcNames[0] || null;
+      const npcId = firstNpc ? this.#extractNpcIdForName(firstNpc, messages) : null;
+      return this.#jsonResult({ speakTo: npcId, note: '', checks: [], ops: [] });
+    }
+
+    // Default: pure narration
+    return this.#jsonResult({ speakTo: null, checks: [], ops: [] });
+  }
+
+  /** Extract NPC names from the system prompt context. */
+  #extractNpcNames(messages) {
+    const names = [];
+    for (const m of messages) {
+      if (m.role === 'system') {
+        const re = /- (\w+) \(id: "([^"]+)"\)/g;
+        let match;
+        while ((match = re.exec(m.content)) !== null) {
+          names.push(match[1]);
+        }
+      }
+    }
+    return names;
+  }
+
+  /** Extract NPC id for a given name from messages. */
+  #extractNpcIdForName(name, messages) {
+    for (const m of messages) {
+      if (m.role === 'system') {
+        const re = new RegExp(`- ${name} \\(id: "([^"]+)"\\)`);
+        const match = re.exec(m.content);
+        if (match) return match[1];
+      }
+    }
+    return null;
+  }
+
+  /** Build a {parsed, raw, usage} result from a plain object. */
+  #jsonResult(obj) {
+    return {
+      parsed: obj,
+      raw: JSON.stringify(obj),
+      usage: { prompt_tokens: 150, completion_tokens: 60 },
     };
   }
 

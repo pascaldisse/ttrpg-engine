@@ -4,11 +4,32 @@
     "place": {
       "connections": [
         { "targetId": "loc-docks", "label": "Down to the docks" },
-        { "targetId": "loc-market", "label": "Through the market square" }
+        { "targetId": "loc-market", "label": "Through the market square" },
+        { "targetId": "loc-backroom", "label": "The back room" }
       ]
     },
     "status": { "alive": true, "conditions": [] },
     "art": { "prompt": "A moody medieval tavern by the docks at night, candlelit windows, cobblestone streets, oil painting style", "image": null }
+  },
+  "loc-backroom": {
+    "identity": { "name": "The Back Room", "kind": "location", "description": "A cramped, windowless room behind the tavern bar. Dusty crates, a rickety table, and a single oil lamp. Marta doesn't let anyone back here — officially." },
+    "place": {
+      "connections": [
+        { "targetId": "loc-tavern", "label": "Back to the tavern" }
+      ]
+    },
+    "status": { "alive": true, "conditions": [] }
+  },
+  "pc-hero": {
+    "identity": { "name": "Rowan", "kind": "pc", "description": "A young adventurer with quick hands and quicker wits. Carries a worn longsword and a lucky coin." },
+    "stats": { "str": 14, "dex": 16, "con": 12, "int": 10, "wis": 13, "cha": 11, "hp": 20, "maxHp": 20, "proficiency": 2, "level": 1 },
+    "status": { "alive": true, "conditions": [] },
+    "place": { "locationId": "loc-tavern", "connections": [] },
+    "inventory": { "items": [
+      { "id": "item-sword", "name": "Longsword", "qty": 1 },
+      { "id": "item-coin", "name": "Lucky Coin", "qty": 1 }
+    ]},
+    "flags": {}
   },
   "npc-marta": {
     "identity": { "name": "Marta", "kind": "npc", "description": "The tavern keeper — grey hair tied back, shrewd eyes, a knowing smirk." },
@@ -33,6 +54,22 @@
   },
   "item-ale": {
     "identity": { "name": "Dark Ale", "kind": "item", "description": "A frothing tankard of the house dark ale — nutty, with a hint of salt." },
+    "status": { "alive": true, "conditions": [] },
+    "place": { "locationId": "loc-tavern", "connections": [] }
+  },
+  "item-lockbox": {
+    "identity": { "name": "Small Lockbox", "kind": "item", "description": "A tarnished brass lockbox tucked under the bar. Sturdy clasp, old padlock. You can hear something metal rattling inside." },
+    "status": { "alive": true, "conditions": [] },
+    "place": { "locationId": "loc-tavern", "connections": [] },
+    "flags": { "locked": true, "trapped": false }
+  },
+  "item-torch": {
+    "identity": { "name": "Wall Torch", "kind": "item", "description": "A flickering torch in an iron sconce. Can be taken down." },
+    "status": { "alive": true, "conditions": [] },
+    "place": { "locationId": "loc-tavern", "connections": [] }
+  },
+  "item-key": {
+    "identity": { "name": "Brass Key", "kind": "item", "description": "A small brass key — fits the lockbox." },
     "status": { "alive": true, "conditions": [] },
     "place": { "locationId": "loc-tavern", "connections": [] }
   },

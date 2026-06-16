@@ -29,11 +29,19 @@ export const SCHEMA = {
     },
   },
   stats: {
-    doc: 'Numerical attributes. Shape is extended by the loaded ruleset.',
-    default: { hp: 10, maxHp: 10 },
+    doc: 'Numerical attributes. Shape is extended by the loaded ruleset. Includes 5e abilities, hp, and proficiency.',
+    default: { hp: 10, maxHp: 10, str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10, proficiency: 2, level: 1 },
     fields: {
       hp: { doc: 'Current hit points.', range: [0, 9999] },
       maxHp: { doc: 'Maximum hit points.', range: [1, 9999] },
+      str: { doc: 'Strength score (5e: 1-30).', range: [1, 30] },
+      dex: { doc: 'Dexterity score (5e: 1-30).', range: [1, 30] },
+      con: { doc: 'Constitution score (5e: 1-30).', range: [1, 30] },
+      int: { doc: 'Intelligence score (5e: 1-30).', range: [1, 30] },
+      wis: { doc: 'Wisdom score (5e: 1-30).', range: [1, 30] },
+      cha: { doc: 'Charisma score (5e: 1-30).', range: [1, 30] },
+      proficiency: { doc: 'Proficiency bonus (5e: 2-6).', range: [2, 6] },
+      level: { doc: 'Character level.', range: [1, 20] },
     },
   },
   inventory: {

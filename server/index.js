@@ -44,7 +44,7 @@ const npcAgent = createNpcAgent({ session, broadcast, applyAndBroadcast, llm });
 
 // ---- Turn Engine ----
 
-const turnEngine = createTurnEngine({ session, broadcast, applyAndBroadcast, llm, dmAgent, npcAgent });
+const turnEngine = createTurnEngine({ session, broadcast, applyAndBroadcast, dmAgent, npcAgent });
 
 /**
  * After applying a batch of ops, fire the turn engine for any action ops.

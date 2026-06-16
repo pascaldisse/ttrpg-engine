@@ -300,10 +300,14 @@ export class View {
         this._handleStreamingEvent(event.data, 'dialogue');
         break;
       case 'system':
-        this._handleStreamingEvent(event.data, 'system');
+        // P3: system events may be rolls (kind:'roll') or generic messages
+        if (event.data && event.data.kind === 'roll') {
+          this._handleRollEvent(event.data);
+        } else {
+          this._handleStreamingEvent(event.data, 'system');
+        }
         break;
       default:
-        // Unknown events: render generically
         break;
     }
   }
@@ -320,6 +324,29 @@ export class View {
       done: true,
     });
   }
+
+  /**
+   * P3: render dice roll result as a centered, muted line.
+   */
+  _handleRollEvent(data) {
+    const text = data.text || 'Unknown roll';
+    const detail = data.detail || {};
+    const success = detail.success !== undefined ? detail.success : null;
+
+    const entry = el('div', { className: 'py-1 text-center' }, [
+      el('span', {
+        className: 'text-xs px-2 py-0.5 rounded ' + (success === true
+          ? 'text-green-400/70 bg-green-900/20'
+          : success === false
+          ? 'text-red-400/70 bg-red-900/20'
+          : 'text-gray-500 bg-gray-800/50 italic'),
+        textContent: text,
+      }),
+    ]);
+
+    this._getTranscriptContainer().appendChild(entry);
+    this._scrollToBottom();
+  },
 
   /**
    * Generalized streaming event handler — works for narration, dialogue, system.

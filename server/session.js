@@ -9,6 +9,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { applyOp, isCanonOp } from '../shared/ops.js';
+import { makeRng } from '../shared/rng.js';
 
 const JOURNAL_CAP = 2000;
 
@@ -21,6 +22,9 @@ export class Session {
   _savePath = null;
   _saveTimer = null;
   _seedDir = null;
+  seed = 42;                 // PRNG seed (default 42; loaded from save)
+  rollCount = 0;             // incremented per roll (ensures distinct rolls)
+  _lookCache = '';           // cached look text set by turn engine
 
   /**
    * @param {string} seedDir — path to world/ (campaign directory)
@@ -47,6 +51,17 @@ export class Session {
   }
 
   // ---- Snapshot ----
+
+  /**
+   * Return a fresh deterministic RNG for the next roll.
+   * Uses seed + rollCount so each roll is distinct and reproducible.
+   * @returns {{d:(sides:number)=>number, int:(min:number,max:number)=>number, next:()=>number}}
+   */
+  rng() {
+    const r = makeRng(this.seed + this.rollCount);
+    this.rollCount++;
+    return r;
+  }
 
   snapshot() {
     const entities = {};
@@ -220,6 +235,8 @@ export class Session {
     const data = {
       savedAt: new Date().toISOString(),
       counter: this.counter,
+      seed: this.seed,
+      rollCount: this.rollCount,
       entities: {},
     };
     for (const [id, comps] of this.entities) {
@@ -234,6 +251,8 @@ export class Session {
     try {
       const data = JSON.parse(fs.readFileSync(this._savePath, 'utf-8'));
       if (data.counter > this.counter) this.counter = data.counter;
+      if (data.seed !== undefined) this.seed = data.seed;
+      if (data.rollCount !== undefined) this.rollCount = data.rollCount;
       for (const [id, comps] of Object.entries(data.entities || {})) {
         this.entities.set(id, JSON.parse(JSON.stringify(comps)));
       }
