@@ -13,6 +13,7 @@ import { WebSocketServer } from 'ws';
 import { Session } from './session.js';
 import { SCHEMA } from '../shared/schema.js';
 import { validateOpBatch } from '../shared/ops.js';
+import { redactForSeat, seatSees } from '../shared/visibility.js';
 import { createLlmClient } from './llm.js';
 import { createTurnEngine } from './turn.js';
 import { createCombatEngine } from './combat.js';
@@ -110,11 +111,22 @@ function readBody(req) {
 
 // ---- Broadcast helpers ----
 
-/** Send a message object to every open WS client. */
-function broadcast(msg) {
-  const data = JSON.stringify(msg);
+/**
+ * Send a message to open WS clients, filtered per recipient seat.
+ * - `audience` gates WHO receives it ('all' | 'dm' | 'players') — DM-only events
+ *   (proposals, agent traces) use 'dm' so players never see the machinery.
+ * - Each recipient's copy is run through redactForSeat(), so non-DM seats never
+ *   receive private components (NPC knowledge/persona/agent internals).
+ * @param {object} msg
+ * @param {'all'|'dm'|'players'} [audience]
+ */
+function broadcast(msg, audience = 'all') {
   for (const client of wss.clients) {
-    if (client.readyState === 1) client.send(data);
+    if (client.readyState !== 1) continue;
+    const seat = client._seat || 'player';
+    if (!seatSees(audience, seat)) continue;
+    const out = redactForSeat(msg, seat);
+    if (out) client.send(JSON.stringify(out));
   }
 }
 
@@ -235,8 +247,12 @@ const wss = new WebSocketServer({ server });
 wss.on('connection', (ws) => {
   console.log('[ws] Client connected');
 
-  // Send snapshot immediately
-  ws.send(JSON.stringify(session.snapshot()));
+  // Seat is unknown until `hello`; default to the least-privileged player seat so
+  // the immediate snapshot is already redacted. A non-player hello re-sends the
+  // entitled view below.
+  ws._seat = 'player';
+  const initialSnap = redactForSeat(session.snapshot(), ws._seat);
+  if (initialSnap) ws.send(JSON.stringify(initialSnap));
 
   ws.on('message', (data) => {
     let msg;
@@ -247,12 +263,19 @@ wss.on('connection', (ws) => {
       return;
     }
 
-    // Hello — register presence
+    // Hello — register presence + lock in this client's seat for redaction.
     if (msg.type === 'hello') {
       const pres = msg.presence || { seat: 'player', who: 'anonymous', mode: 'play' };
+      ws._seat = pres.seat || 'player';
       const presenceId = msg.presenceId || `presence-${Date.now()}`;
       applyAndBroadcast([{ op: 'spawn', id: presenceId, components: { presence: pres } }], 'system');
       ws._presenceId = presenceId; // remembered for cleanup on disconnect
+      // A privileged seat (e.g. dm) is entitled to more than the player snapshot it
+      // got on connect — re-send the seat-appropriate (unredacted) view.
+      if (ws._seat !== 'player') {
+        const snap = redactForSeat(session.snapshot(), ws._seat);
+        if (snap) ws.send(JSON.stringify(snap));
+      }
       return;
     }
 

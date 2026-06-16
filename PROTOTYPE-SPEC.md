@@ -353,8 +353,21 @@ Progress is also tracked in agent memory (`ttrpg-engine-project.md`).
   area shows the current location's name + description. Scoping mirrors `shared/space.js` (only what's HERE is
   shown), so off-screen rooms/NPCs no longer leak. Raw entity dump preserved behind a collapsed "Debug" details.
   `tools/test-client.mjs` drives the real `View` against a stubbed DOM (scoping + render + action dispatch).
-  NOTE: this is **client-side** scoping (cosmetic) — the server still sends the full snapshot; true server-side
-  per-client info-hiding is a follow-up that matters for multiplayer/anti-peek, not single-player feel.
+  NOTE: the *location* scoping here is client-side (cosmetic). True per-seat info-hiding of **private content**
+  (NPC secrets/persona/agent internals) is now enforced **server-side** — see DMView Slice 1 below.
+
+- **DMView (in progress — discuss-first feature)** a separate DM control surface (`dm-notes` spec): interrupt/override
+  LLM decisions, expose all agent + LLM actions (click-to-reveal), autopilot toggle, turn-order override. Settled
+  architecture (decided with the user): **hybrid-pause** control (LLM beats auto-apply = autopilot; a pause toggle
+  flips into a propose→approve gate), **server-side per-presence filtering** (DM sees all; players get redacted),
+  **combat-only** turn-order override for v1 (reuse `encounter.order`). Built in slices:
+  - **Slice 1 ✅ — per-seat visibility filter.** `shared/visibility.js` (pure: `seatSees(audience,seat)`,
+    `redactForSeat(msg,seat)`, `redactComponentsForSeat`) strips `persona`/`knowledge`/`lifelog` and reduces `agent`
+    to `{enabled,accent}` for non-DM seats; drops private-component ops; never mutates input. `server/index.js`
+    broadcast is now seat-aware (`broadcast(msg, audience)`, per-client redaction; `ws._seat` set from the `hello`
+    presence; DM re-gets a full snapshot post-hello). Closes the player-secret leak. test-visibility 17 +
+    smoke-dmview-s1 3 (player ws gets stripped npc-marta, DM ws gets full).
+  - Slices 2–4 (next): the propose/approve gate (pause), agent-trace events (DM-only), and the DMView client page.
 
 **Deferred (explicitly later):** atmosphere (image/music — the old "P4"); the human **DM seat** (review/override/mood
 knob/canon-confirm); **multiplayer** (last). The architecture keeps all three open — see DESIGN-NOTES #1
