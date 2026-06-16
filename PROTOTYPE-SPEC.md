@@ -296,29 +296,36 @@ iterating.
 
 ---
 
-## 13. Phased build path (loop-first; no code until you approve this)
+## 13. Phased build path & progress (reprioritized — "fully functional game FIRST"; multiplayer last)
 
-- **P0 — Skeleton (the GAIA spine):** server WS+HTTP hub, `Session` store, op apply/broadcast/journal, snapshot;
-  `shared/schema.js` + `ops.js`; client connect → store → render an entity list + narration log; `tools/patch.mjs`
-  to spawn entities by hand. *No LLM yet.* Proves the data/op/reconcile loop end-to-end.
-- **P1 — The turn loop (prove the loop):** `action` → `turn.run` → DeepSeek stream → `event:narration` live →
-  parse → apply ops. `buildContext` orders the prompt for **cache hits**: byte-stable prefix (system/ruleset) FIRST,
-  changing scene + action LAST (DeepSeek caches prefixes from token 0). `LlmClient` = `stream` / `complete` /
-  `structured(messages, zodSchema)`; default model `deepseek-v4-flash`, provider/model/baseURL/key in config.
-  Two-pass: stream narration, then a `structured` call extracts the `{ops, checks}` (JSON mode → lenient parse →
-  Zod-validate). Free-text input, 5e-from-memory, no ruleset loaded. **This is the first playable moment.**
-  (See `analysis/deepseek-integration-notes.md`.)
-- **P2 — State & senses:** real entities (NPC/location/quest components); `sense.js` (`look/describe/query/check`);
-  `look` becomes the generated living summary; `summary.js` fold-down; canon write-back + `persist`. Action buttons.
-- **P3 — DM seat + multiplayer:** `presence` seats; AI auto-occupies; human seat = proposals/approve/override +
-  mood knob; schema-driven `inspector.js`. Second player seat (free from "everything is a client").
-- **P4 — Atmosphere:** `ImageClient` (one provider) + style direction + seed + cache + post-process; Web Audio mood
-  music + crossfade.
-- **P5 — Adjudication & combat:** the pluggable **`resolveCheck()`** engine + ruleset **check definitions**
-  (`ruleset/checks.js`) feeding deterministic results into context (engine rolls, LLM narrates); the `check` op
-  wired end-to-end. Combat as a sub-mode behind an `Encounter` handoff; default narrative combat (swappable later).
-- **P6 — Rules-as-data (prove the engine):** load a ruleset bundle (schema extension + cached prefix + system
-  prompt); test on SRD (familiar ground), then **DSA** — the moment the moat is real.
+**Status: P0–P3 DONE, verified on real DeepSeek, committed** (git `3635b7e` P0–P2, `9600972` P3). Progress is also
+tracked in agent memory (`ttrpg-engine-project.md`).
+
+- **P0 — Skeleton (the GAIA spine) ✅** WS+HTTP hub, `Session` store, op apply/broadcast/journal, snapshot,
+  framework-free reconciler client, `tools/patch.mjs`, sample world. No LLM.
+- **P1 — The turn loop ✅** `action` → cache-ordered context → DeepSeek stream → live narration → structured
+  op-extraction (Zod). `LlmClient` = stream/complete/structured; `deepseek-v4-flash` default, swappable; Mock adapter.
+- **P2 — State, senses & the agent model ✅** `sense.js` (look/describe/query/check); **NPCs as independent
+  agent-clients** (own system prompt + scoped `knowledge` + memory); DM = director/router; 4-lane transcript
+  (DM narration / NPC dialogue / system / player). `@name` + single-NPC no-LLM routing.
+- **P3 — Action→consequence loop + mechanics ✅** engine-rolled dice (`shared/rng.js` + pluggable
+  `shared/checks.js`, 5e d20-vs-DC), semantic effects (`shared/effects.js`: damage/heal/giveItem/move/setFlag →
+  canonical ops), PC with 5e stats, DM-as-referee `adjudicate()` + outcome-aware `narrateOutcome()` +
+  **`canonize()`** (narrate-freely-then-canonize keeps state in sync with the story). System lane shows rolls.
+
+**Remaining (game-functional-first):**
+- **P4 — Exploration (NEXT):** movement between locations (place graph), `examine`/`use`/`take` intents, "only what's
+  *here* is present", a multi-room world. Makes the world navigable.
+- **P5 — Combat:** JRPG encounter behind an `Encounter` handoff; **initiative = first use of the floor/turn system**
+  (DESIGN-NOTES #2); attacks/damage via `resolveCheck`; victory/defeat; swappable (narrative default).
+- **P6 — Quests & progression:** quest state machine advances from events/checks; rewards; XP/leveling.
+- **P7 — Rules-as-data (the moat):** load a ruleset bundle (schema ext + check defs + system prompt) — SRD, then
+  **DSA** (3d20 roll-under + QS via the pluggable check engine; `checks.js` already has the `comparator:'ge'|'le'` seam).
+- **P8 — World generation:** procgen bones + LLM "charges it with meaning", generated once → fixed data.
+
+**Deferred (explicitly later):** atmosphere (image/music — the old "P4"); the human **DM seat** (review/override/mood
+knob/canon-confirm); **multiplayer** (last). The architecture keeps all three open — see DESIGN-NOTES #1
+(human-playable agent seats via `agent.controller`/`presence.controller`) and §11 (atmosphere designed-in).
 
 ---
 
