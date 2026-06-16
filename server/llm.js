@@ -253,6 +253,11 @@ export class MockLlmClient {
       return this.#mockCanonize(actionText);
     }
 
+    // ---- P8: Worldgen branch (deterministic "charge with meaning") ----
+    if (opts.role === 'worldgen') {
+      return this.#mockWorldgen(messages);
+    }
+
     // Routing mode: return JSON routing result
     if (opts.role === 'routing') {
       // Extract first NPC id from the present NPCs list in the prompt
@@ -314,6 +319,45 @@ export class MockLlmClient {
       ops = [{ op: 'take', id: 'pc-hero', item: { id: 'item-key', name: 'Brass Key' } }];
     }
     return { parsed: { ops }, raw: JSON.stringify({ ops }), usage: { prompt_tokens: 80, completion_tokens: 20 } };
+  }
+
+  /**
+   * Deterministic worldgen for offline testing — names a location + its
+   * inhabitants, or a quest, by parsing the ids out of the prompt. Mirrors the
+   * shape server/worldgen.js expects (LocationChargeSchema / QuestChargeSchema).
+   */
+  #mockWorldgen(messages) {
+    const user = this.#extractActionText(messages);
+
+    // Quest charge call → {name, description, steps}
+    if (/"steps"/.test(user) && !/"inhabitants"/.test(user)) {
+      return this.#jsonResult({
+        name: 'The Mock Errand',
+        description: 'A deterministic quest woven for offline testing.',
+        steps: ['Reach the lair.', 'Defeat the foes guarding it.', 'Seize the prize.'],
+      });
+    }
+
+    // Location charge call → {name, description, artPrompt, inhabitants[]}
+    const locId = (user.match(/Location id:\s*(\S+)/) || [])[1] || 'loc-?';
+    const ids = [...user.matchAll(/^\s*-\s*(\S+)\s+—/gm)].map(m => m[1]);
+    const inhabitants = ids.map((id) => {
+      const n = parseInt((id.match(/(\d+)/) || [])[1] || '0', 10);
+      if (id.startsWith('enemy')) return { id, name: `Mock Foe ${n}`, description: 'A snarling test enemy.', personality: 'Brutish and territorial.' };
+      if (id.startsWith('item'))  return { id, name: `Mock Object ${n}`, description: 'A curious test object.' };
+      if (id.startsWith('pc'))    return { id, name: 'Mock Wanderer', description: 'The test protagonist.' };
+      return {
+        id, name: `Mock Townsperson ${n}`, description: 'A talkative test villager.',
+        personality: 'Chatty and helpful.', backstory: 'Born inside the test suite.',
+        voice: 'Plain and even.', facts: [`Knows the way around ${locId}.`], secrets: ['Hides a test flag.'],
+      };
+    });
+    return this.#jsonResult({
+      name: `Mock ${locId}`,
+      description: `A procedurally-described location (${locId}).`,
+      artPrompt: `mock art for ${locId}`,
+      inhabitants,
+    });
   }
 
   /**

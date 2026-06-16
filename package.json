@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "concurrently -k \"node --env-file-if-exists=.env server/index.js\" \"vite\"",
     "server": "node --env-file-if-exists=.env server/index.js",
+    "worldgen": "node --env-file-if-exists=.env tools/worldgen.mjs",
     "client": "vite"
   },
   "dependencies": {
