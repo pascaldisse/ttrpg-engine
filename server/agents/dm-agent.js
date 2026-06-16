@@ -10,6 +10,7 @@ import { z } from 'zod';
 import { buildDmNarrationContext, buildDmRoutingContext } from '../../shared/context.js';
 import { streamBeat } from './stream-beat.js';
 import { semanticOpTypes } from '../../shared/effects.js';
+import { look as senseLook } from '../sense.js';
 
 // ---- 5e system prompt for the DM (narration voice) ----
 
@@ -40,18 +41,25 @@ Always stay in the fiction. You are the world.`;
 
 const ADJUDICATE_SYSTEM_PROMPT = `You are the DM referee. For each player action, decide:
 1. Does the action target an NPC for conversation? → set speakTo to that npcId.
-2. Does the action require dice checks? → list them (ability, optional skill, dc, reason).
+2. Does the player want to TRAVEL to a connected place? → set move:{"to":"<locationId>"}
+   using an EXACT targetId from the scene's Exits list. NEVER move to a place that is
+   not listed as an exit. When moving, leave checks and ops empty — arrival is narrated separately.
+3. Does the action require dice checks? → list them (ability, optional skill, dc, reason).
    You must NEVER invent dice values — only REQUEST checks. The engine rolls.
-3. Does the action have certain consequences? → provide semantic ops.
+4. Does the action have certain consequences? → provide semantic ops.
    - If a check is requested: provide ops for the SUCCESS case only.
    - For no-check actions: provide ops directly.
+   - To PICK UP a world object that is present in the scene, use
+     {op:'take', id:<PC_ID>, item:{id:<the item's entity id>, name:<Name>}} — NOT giveItem.
+
+IMPORTANT: Only reference NPCs, items, and exits that appear in the scene below.
+The player can only interact with what is HERE.
 
 Available semantic ops:
+- {op:'take', id:<PC_ID>, item:{id:<itemEntityId>, name:<displayName>}} — pick up a PRESENT world object
 - {op:'damage', id:<entityId>, amount:<number>} — deal damage (engine computes new hp)
 - {op:'heal', id:<entityId>, amount:<number>} — heal (engine caps at maxHp)
-- {op:'giveItem', id:<entityId>, item:{id:<itemId>, name:<displayName>}}
-- {op:'takeItem', id:<entityId>, item:{id:<itemId>}}
-- {op:'move', id:<entityId>, to:<locationId>}
+- {op:'giveItem', id:<entityId>, item:{id:<itemId>, name:<displayName>}} — abstract grant with NO world entity
 - {op:'setFlag', key:<string>, value:<any>, id?<world-state-id>}
 
 Respond with JSON ONLY. No narration, no commentary.`;
@@ -61,20 +69,22 @@ Respond with JSON ONLY. No narration, no commentary.`;
 const CANONIZE_SYSTEM_PROMPT = `You are the DM's canon-recorder. You read the narration that was JUST delivered to the player and output the concrete world-state changes it ESTABLISHED, as semantic ops in JSON.
 
 Be THOROUGH about concrete changes — even if the narration also contains description or dialogue, extract EVERY concrete change inside it:
-- The player picks up / takes / grabs / loots / receives / is handed / pockets an object → {"op":"giveItem","id":"<PC_ID>","item":{"id":"<slug>","name":"<Name>"}}
+- The player picks up / takes / grabs / loots / pockets an object that EXISTS in the scene below → {"op":"take","id":"<PC_ID>","item":{"id":"<that item's entity id>","name":"<Name>"}}
+- The player is granted something that has NO entity in the scene (coins, a note, abstract loot) → {"op":"giveItem","id":"<PC_ID>","item":{"id":"<slug>","name":"<Name>"}}
 - The player loses / drops / uses up / hands over an item → {"op":"takeItem","id":"<PC_ID>","item":{"id":"<slug>"}}
 - The player or a target takes damage → {"op":"damage","id":"<entityId>","amount":N}; is healed → {"op":"heal","id":"<entityId>","amount":N}
-- The player moves to a new location → {"op":"move","id":"<PC_ID>","to":"<locationId>"}
 - A world fact becomes true → {"op":"setFlag","key":"<k>","value":<v>}
 
 Rules:
 - Record ONLY what the narration actually made true (it already reflects success/failure — a FAILED attempt changes nothing).
 - Do NOT invent changes the narration didn't describe.
+- Do NOT record movement between locations — travel is handled by the engine separately.
+- Prefer the EXACT item entity ids shown in the scene below when the object is already present.
 - If truly nothing concrete changed (pure talk or observation), return {"ops":[]}.
-- The player character's id is "<PC_ID>"; the world flags entity id is "world-state". Invent short kebab item ids (e.g. "item-torch").
+- The player character's id is "<PC_ID>"; the world flags entity id is "world-state".
 
 Examples:
-- Narration: "You pull the rusty key from the dead guard's belt and pocket it." → {"ops":[{"op":"giveItem","id":"<PC_ID>","item":{"id":"item-rusty-key","name":"Rusty Key"}}]}
+- Scene has "**Brass Key** (item-key)"; Narration: "You pry the lockbox open and pocket the brass key inside." → {"ops":[{"op":"take","id":"<PC_ID>","item":{"id":"item-key","name":"Brass Key"}}]}
 - Narration: "The blade rakes your arm — a hot line of pain, blood welling." → {"ops":[{"op":"damage","id":"<PC_ID>","amount":5}]}
 - Narration: "She studies you warily but says nothing more." → {"ops":[]}
 
@@ -96,12 +106,17 @@ const checkRequestSchema = z.object({
   reason: z.string().optional(),
 });
 
+// Permissive on purpose: a real LLM's JSON shape varies (extra fields, a string
+// where we expect an object, dc out of range, a check missing `ability`). A strict
+// schema here makes structured() THROW, which drops the WHOLE ruling — silently
+// losing movement and checks. So we accept anything and coerce in adjudicate().
 const adjudicationSchema = z.object({
-  speakTo: z.string().nullable().default(null),
-  note: z.string().optional().default(''),
-  checks: z.array(checkRequestSchema).default([]),
-  ops: z.array(z.any()).default([]),
-});
+  speakTo: z.any().optional(),
+  note: z.any().optional(),
+  move: z.any().optional(),
+  checks: z.any().optional(),
+  ops: z.any().optional(),
+}).passthrough();
 
 // ---- Canonize result schema (P3.1) ----
 
@@ -220,14 +235,17 @@ export function createDmAgent({ session, broadcast, applyAndBroadcast, llm }) {
     const pcStats = pcEntry && pcEntry[1].stats ? JSON.stringify(pcEntry[1].stats) : '{}';
     const pcName = (pcEntry && pcEntry[1].identity && pcEntry[1].identity.name) || 'the hero';
 
+    // Location-scoped scene frame (lists present NPCs/items + exits the player may use).
+    const lookText = session._lookCache || senseLook(session);
+
     const messages = [
       {
         role: 'system',
-        content: adjudicatePrompt()(npcList, pcId, pcName, pcStats),
+        content: adjudicatePrompt()(npcList, pcId, pcName, pcStats, lookText),
       },
       {
         role: 'user',
-        content: `Player action: "${actionText}"\n\nRespond with JSON ONLY: {"speakTo":<npcId|null>, "note":"<director note for NPC if speaking>", "checks":[{ability,skill?,dc,reason}], "ops":[<semantic ops for SUCCESS case>]}`,
+        content: `Player action: "${actionText}"\n\nRespond with JSON ONLY: {"speakTo":<npcId|null>, "move":{"to":"<locationId>"}|null, "note":"<director note for NPC if speaking>", "checks":[{ability,skill?,dc,reason}], "ops":[<semantic ops for SUCCESS case>]}`,
       },
     ];
 
@@ -237,25 +255,49 @@ export function createDmAgent({ session, broadcast, applyAndBroadcast, llm }) {
         role: 'adjudicate',
       });
 
-      // Validate speakTo references a real present NPC
-      if (parsed.speakTo && !presentNpcs.some(n => n.npcId === parsed.speakTo)) {
-        console.warn(`[dm-agent] Adjudicate returned speakTo=${parsed.speakTo} which is not a present agent-NPC; invalidating.`);
-        parsed.speakTo = null;
+      // Coerce every field here so a slightly-off shape never silently drops the ruling.
+      const ruling = { speakTo: null, move: null, note: '', checks: [], ops: [] };
+
+      // speakTo → a present agent-NPC id, else null
+      if (typeof parsed.speakTo === 'string' && parsed.speakTo.trim()) {
+        const id = parsed.speakTo.trim();
+        if (presentNpcs.some(n => n.npcId === id)) ruling.speakTo = id;
+        else console.warn(`[dm-agent] Adjudicate speakTo=${id} is not a present agent-NPC; ignoring.`);
       }
 
-      // Sanitize checks
-      parsed.checks = (parsed.checks || []).map(c => ({
-        ability: c.ability || 'wis',
-        skill: c.skill || undefined,
-        dc: typeof c.dc === 'number' ? c.dc : 12,
-        reason: c.reason || '',
-      }));
+      // move → {to:string} (accept a bare string or {to}); connectivity is checked downstream
+      if (parsed.move) {
+        if (typeof parsed.move === 'string' && parsed.move.trim()) {
+          ruling.move = { to: parsed.move.trim() };
+        } else if (typeof parsed.move === 'object' && typeof parsed.move.to === 'string' && parsed.move.to.trim()) {
+          ruling.move = { to: parsed.move.to.trim() };
+        }
+      }
 
-      return parsed;
+      if (typeof parsed.note === 'string') ruling.note = parsed.note;
+      if (Array.isArray(parsed.ops)) ruling.ops = parsed.ops;
+
+      // checks → clamped, defaulted check requests (drops malformed entries, never throws)
+      const rawChecks = Array.isArray(parsed.checks) ? parsed.checks : [];
+      ruling.checks = rawChecks
+        .filter(c => c && typeof c === 'object')
+        .map(c => {
+          let dc = Number(c.dc);
+          if (!Number.isFinite(dc)) dc = 12;
+          dc = Math.max(1, Math.min(50, Math.round(dc)));
+          return {
+            ability: String(c.ability || 'wis').toLowerCase(),
+            skill: c.skill ? String(c.skill) : undefined,
+            dc,
+            reason: c.reason ? String(c.reason) : '',
+          };
+        });
+
+      return ruling;
     } catch (err) {
       console.error('[dm-agent] Adjudication call failed:', err.message);
       // Fallback: treat as pure narration
-      return { speakTo: null, note: '', checks: [], ops: [] };
+      return { speakTo: null, move: null, note: '', checks: [], ops: [] };
     }
   }
 
@@ -327,11 +369,14 @@ export function createDmAgent({ session, broadcast, applyAndBroadcast, llm }) {
       checkText = '\nDice results: ' + checkResults.map(r => r.summary).join('; ');
     }
 
+    // Ground canonize in the scoped scene so it can reference real item entity ids.
+    const lookText = session._lookCache || senseLook(session);
+
     const messages = [
       { role: 'system', content: CANONIZE_SYSTEM_PROMPT.replaceAll('<PC_ID>', pcId) },
       {
         role: 'user',
-        content: `Player action: "${actionText}"${checkText}\n\nNarration just delivered to the player:\n"""\n${narrationText}\n"""\n\nOutput JSON {"ops":[...]} capturing ONLY the concrete state changes this narration established. If nothing concrete changed, return {"ops":[]}.`,
+        content: `Scene (the entities that exist HERE — use these exact ids):\n${lookText}\n\nPlayer action: "${actionText}"${checkText}\n\nNarration just delivered to the player:\n"""\n${narrationText}\n"""\n\nOutput JSON {"ops":[...]} capturing ONLY the concrete state changes this narration established. If nothing concrete changed, return {"ops":[]}.`,
       },
     ];
 
@@ -353,6 +398,6 @@ export function createDmAgent({ session, broadcast, applyAndBroadcast, llm }) {
 /** Build the adjudicate system prompt with dynamic scene/PC info injected. */
 function adjudicatePrompt() {
   const base = ADJUDICATE_SYSTEM_PROMPT;
-  return (npcList, pcId, pcName, pcStats) =>
-    base + `\n\n## Scene\nNPCs present:\n${npcList || '(none)'}\n\n## The PC\nID: "${pcId || 'unknown'}"\nName: ${pcName}\nStats: ${pcStats}\n\nWorld-state id: "world-state"\nSupported ops: ${semanticOpTypes().join(', ')}`;
+  return (npcList, pcId, pcName, pcStats, lookText) =>
+    base + `\n\n## Scene (only these entities exist HERE)\n${lookText || '(scene unknown)'}\n\nNPCs you may route to:\n${npcList || '(none)'}\n\n## The PC\nID: "${pcId || 'unknown'}"\nName: ${pcName}\nStats: ${pcStats}\nWorld-state id: "world-state"`;
 }

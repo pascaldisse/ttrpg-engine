@@ -18,6 +18,16 @@ import { presentAgents as sensePresentAgents, look as senseLook } from './sense.
 import { resolveCheck, formatCheckResult } from '../shared/checks.js';
 import { expandOp } from '../shared/effects.js';
 import { validateOp } from '../shared/ops.js';
+import { resolveExit, isConnected, pcLocationId } from '../shared/space.js';
+
+/**
+ * Movement-intent gate for the deterministic fast-path. The text must READ like
+ * travel before we try to match it to an exit — anchored at the start so it can't
+ * false-trigger on "examine the door to the docks". An optional polite preamble
+ * ("I'd like to", "let's", "can we") may precede the movement verb. If the verb is
+ * present but no exit matches, we fall through to LLM adjudication (move backstop).
+ */
+export const MOVE_INTENT_RE = /^\s*(?:(?:i(?:'d| would)?\s+(?:like|want|wish|love|need)\s+to|i\s+(?:wanna|want to)|let'?s|let us|can we|could we|shall we|time to|off)\s+)?(?:go|move|walk|head|travel|journey|venture|proceed|return|leave|exit|enter|run|step|climb|descend|cross|wander|stroll|visit|approach|make (?:my|our) way|set off|set out)\b/i;
 
 /**
  * Create the turn engine.
@@ -33,6 +43,22 @@ import { validateOp } from '../shared/ops.js';
  */
 export function createTurnEngine({ session, broadcast, applyAndBroadcast, dmAgent, npcAgent }) {
   /**
+   * Move the PC to a connected location, then narrate the arrival.
+   * The move itself is engine-applied (deterministic, already canon) so we do
+   * NOT canonize the arrival prose — it only describes the new room.
+   *
+   * @param {string} pcId
+   * @param {string} targetId — destination location id (already validated as connected)
+   * @param {object} actionOp — the originating player action (for narration context)
+   */
+  async function doMove(pcId, targetId, actionOp) {
+    await applyConsequences([{ op: 'move', id: pcId, to: targetId }], session, applyAndBroadcast);
+    // Refresh the scene frame to the NEW location and narrate arrival.
+    session._lookCache = senseLook(session);
+    await dmAgent.narrateOutcome(actionOp, [], session._lookCache);
+  }
+
+  /**
    * Orchestrate a turn with full adjudication → checks → narration → consequences.
    * @param {object} actionOp — {op:'action', text, by}
    */
@@ -44,15 +70,17 @@ export function createTurnEngine({ session, broadcast, applyAndBroadcast, dmAgen
       // 0. Cache the look frame for narrateOutcome (avoid re-computation)
       session._lookCache = senseLook(session);
 
-      // 1. Get present agent-NPCs
+      // 1. Get present agent-NPCs (already scoped to the PC's location)
       const presentNpcs = sensePresentAgents(session);
 
-      // 0.1 Find PC entity for stat context (needed for check resolution)
+      // 0.1 Find PC entity for stat context (needed for check resolution + movement)
       const pcEntry = [...session.entities.entries()].find(
         ([_id, comps]) => (comps.identity || {}).kind === 'pc'
       );
+      const pcId = pcEntry ? pcEntry[0] : null;
       const pcStats = (pcEntry && pcEntry[1].stats) || {};
       const pcProficiency = pcStats.proficiency || 2;
+      const here = pcLocationId(session.entities);
 
       // 2. @name fast-path (no LLM) → route to matched NPC directly
       const atMatch = actionText.match(/@(\S+)/);
@@ -69,8 +97,35 @@ export function createTurnEngine({ session, broadcast, applyAndBroadcast, dmAgen
         // @mention but no match → fall through to adjudication
       }
 
+      // 2.5 Movement fast-path (deterministic, no LLM): the action must read like
+      //     travel AND resolve unambiguously to a connected exit.
+      if (pcId && here && MOVE_INTENT_RE.test(actionText)) {
+        const target = resolveExit(session.entities, here, actionText);
+        if (target) {
+          await doMove(pcId, target, actionOp);
+          return;
+        }
+        // ambiguous / no exit matched → fall through to adjudication (move backstop)
+      }
+
       // 3. Adjudicate: structured LLM call
       const ruling = await dmAgent.adjudicate(actionOp, presentNpcs);
+
+      // 3.5 Movement decided by the LLM (natural-language backstop).
+      if (pcId && ruling.move && ruling.move.to) {
+        const dest = ruling.move.to;
+        if (here && isConnected(session.entities, here, dest)) {
+          await doMove(pcId, dest, actionOp);
+          return;
+        }
+        // Destination not reachable from here — tell the player; then narrate normally.
+        applyAndBroadcast([{
+          op: 'event',
+          name: 'system',
+          data: { kind: 'note', text: `(You can't reach "${dest}" directly from here.)` },
+        }], 'system');
+        // fall through to a plain outcome narration (no checks).
+      }
 
       // 4. speakTo path → NPC conversation (talk-only in P3)
       if (ruling.speakTo) {

@@ -5,10 +5,15 @@
  * Based on GAIA's sense.js text-sense pattern.
  */
 
+import { buildLookFrame } from '../shared/context.js';
+import { pcLocationId } from '../shared/space.js';
+
 /**
  * Build a compact text scene frame — the "living summary".
- * Current location, present NPCs (+one-line persona), party/pc stats, active quest, flags.
- * High-salience, generated fresh from state each call.
+ *
+ * Delegates to the canonical, LOCATION-SCOPED builder in shared/context.js so
+ * there is exactly ONE scene-frame generator. Shows only what is present at the
+ * PC's current location (+ party, active quests, world flags).
  *
  * @param {import('./session.js').Session} session
  * @returns {string}
@@ -18,115 +23,7 @@ export function look(session) {
   if (!entities || entities.size === 0) {
     return 'Current scene: (empty — no entities loaded).';
   }
-
-  const locations = [];
-  const npcs = [];
-  const items = [];
-  const pcs = [];
-  const quests = [];
-  const flags = [];
-
-  for (const [id, comps] of entities) {
-    const identity = comps.identity || {};
-    const kind = identity.kind || '?';
-    const name = identity.name || id;
-
-    switch (kind) {
-      case 'location': {
-        const desc = identity.description || '';
-        const connections = (comps.place && comps.place.connections) || [];
-        const exits = connections.map(c => `${c.label || c.targetId || '?'}`).join(', ');
-        let line = `- **${name}** (${id}): ${desc}`;
-        if (exits) line += ` Exits: ${exits}.`;
-        locations.push(line);
-        break;
-      }
-      case 'npc': {
-        const status = comps.status || {};
-        if (status.alive === false) continue; // skip dead NPCs in look
-        const desc = identity.description ? ` — ${identity.description}` : '';
-        const place = comps.place || {};
-        const at = place.locationId ? ` (at ${place.locationId})` : '';
-        const persona = comps.persona || {};
-        const pers = persona.personality ? ` Personality: ${persona.personality}.` : '';
-        const agent = comps.agent || {};
-        const agentTag = agent.enabled ? ' [AGENT]' : '';
-        npcs.push(`- **${name}** (${id})${agentTag}${at}${desc}${pers}`);
-        break;
-      }
-      case 'item': {
-        const desc = identity.description ? ` — ${identity.description}` : '';
-        const place = comps.place || {};
-        const at = place.locationId ? ` (at ${place.locationId})` : '';
-        items.push(`- **${name}** (${id})${at}${desc}`);
-        break;
-      }
-      case 'pc': {
-        const stats = comps.stats || {};
-        const hpStr = stats.hp !== undefined ? ` HP:${stats.hp}/${stats.maxHp}` : '';
-        const place = comps.place || {};
-        const at = place.locationId ? ` (at ${place.locationId})` : '';
-        const status = comps.status || {};
-        const conds = status.conditions && status.conditions.length > 0
-          ? ` Conditions: ${status.conditions.join(', ')}` : '';
-        pcs.push(`- **${name}** (${id})${at}${hpStr}${conds}`);
-        break;
-      }
-      case 'quest': {
-        const phase = (comps.quest && comps.quest.phase) || '?';
-        const steps = (comps.quest && comps.quest.steps) || [];
-        const currentStep = (comps.quest && comps.quest.currentStep) || 0;
-        const current = steps[currentStep] || '';
-        quests.push(`- **${name}** (${id}) phase:${phase} step:${currentStep + 1}/${steps.length} "${current}"`);
-        break;
-      }
-      case 'world-state': {
-        const fs = comps.flags || {};
-        for (const [k, v] of Object.entries(fs)) {
-          flags.push(`- ${k}: ${JSON.stringify(v)}`);
-        }
-        break;
-      }
-    }
-  }
-
-  const parts = ['Current scene frame:'];
-
-  if (locations.length > 0) {
-    parts.push('\nLocation:');
-    parts.push(...locations);
-  }
-
-  if (npcs.length > 0) {
-    parts.push('\nNPCs present:');
-    parts.push(...npcs);
-  }
-
-  if (items.length > 0) {
-    parts.push('\nItems:');
-    parts.push(...items);
-  }
-
-  if (pcs.length > 0) {
-    parts.push('\nParty:');
-    parts.push(...pcs);
-  }
-
-  if (quests.length > 0) {
-    parts.push('\nActive quests:');
-    parts.push(...quests);
-  }
-
-  if (flags.length > 0) {
-    parts.push('\nWorld flags:');
-    parts.push(...flags);
-  }
-
-  if (parts.length === 1) {
-    parts.push('\n(No entities of interest in the current scene.)');
-  }
-
-  return parts.join('\n');
+  return buildLookFrame(entities);
 }
 
 /**
@@ -224,13 +121,17 @@ export function check(session) {
 }
 
 /**
- * Return the agent-NPCs in the current scene (identity.kind==='npc' && agent.enabled).
- * Used by the routing engine.
+ * Return the agent-NPCs present at the PC's CURRENT location
+ * (identity.kind==='npc' && agent.enabled && co-located with the PC).
+ * Used by the routing engine — an NPC in another room never answers.
+ *
+ * If the PC has no location, falls back to all agent-NPCs (degenerate single-room).
  *
  * @param {import('./session.js').Session} session
- * @returns {Array<{npcId:string, name:string, persona:string, accent:string|null}>}
+ * @returns {Array<{npcId:string, name:string, persona:string, accent:string|null, locationId:string|null}>}
  */
 export function presentAgents(session) {
+  const here = pcLocationId(session.entities);
   const agents = [];
   for (const [id, comps] of session.entities) {
     const identity = comps.identity || {};
@@ -242,12 +143,13 @@ export function presentAgents(session) {
     const status = comps.status || {};
     if (status.alive === false) continue;
 
-    const persona = comps.persona || {};
     const place = comps.place || {};
 
-    // Include: any NPC with agent.enabled in the current scene.
-    // For P2, "in current scene" = they have a place.locationId pointing to a location.
-    // If no location filter available, include all agent-NPCs.
+    // Location scoping: only NPCs co-located with the PC. If we can't determine
+    // the PC's location, include all agent-NPCs (single-room fallback).
+    if (here && place.locationId !== here) continue;
+
+    const persona = comps.persona || {};
     agents.push({
       npcId: id,
       name: identity.name || id,

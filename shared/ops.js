@@ -99,6 +99,19 @@ const moveSchema = z.object({
   to: z.string(),
 });
 
+const takeSchema = z.object({
+  op: z.literal('take'),
+  id: z.string(),
+  item: z.object({ id: z.string(), name: z.string().optional(), qty: z.number().optional() }),
+});
+
+const dropSchema = z.object({
+  op: z.literal('drop'),
+  id: z.string(),
+  item: z.object({ id: z.string() }),
+  to: z.string().optional(),
+});
+
 const setFlagSchema = z.object({
   op: z.literal('setFlag'),
   key: z.string(),
@@ -110,6 +123,7 @@ export const opUnion = z.discriminatedUnion('op', [
   spawnSchema, setSchema, mergeSchema, despawnSchema,
   eventSchema, actionSchema, rollSchema, resetSchema,
   damageSchema, healSchema, giveItemSchema, takeItemSchema, moveSchema, setFlagSchema,
+  takeSchema, dropSchema,
 ]);
 
 const batchSchema = z.array(opUnion);

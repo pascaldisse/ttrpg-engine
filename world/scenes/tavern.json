@@ -73,6 +73,91 @@
     "status": { "alive": true, "conditions": [] },
     "place": { "locationId": "loc-tavern", "connections": [] }
   },
+  "loc-docks": {
+    "identity": { "name": "The Docks", "kind": "location", "description": "Salt-bleached planks stretch over black water. Gulls wheel above moored fishing boats; rope, tar, and brine thicken the air. One sloop sits apart from the rest, its cargo lashed under oilcloth." },
+    "place": {
+      "connections": [
+        { "targetId": "loc-tavern", "label": "Back up to the tavern" },
+        { "targetId": "loc-market", "label": "Along the quay to the market" }
+      ]
+    },
+    "status": { "alive": true, "conditions": [] },
+    "art": { "prompt": "A misty harbor dock at dawn, moored fishing boats, coiled ropes, a lone sloop under oilcloth, oil painting style", "image": null }
+  },
+  "loc-market": {
+    "identity": { "name": "The Market Square", "kind": "location", "description": "A cramped square of canvas stalls and haggling voices. Smoke from a chestnut brazier drifts between crates of fish, bolts of cloth, and trinkets of dubious origin." },
+    "place": {
+      "connections": [
+        { "targetId": "loc-tavern", "label": "Down the lane to the tavern" },
+        { "targetId": "loc-docks", "label": "Toward the waterfront" }
+      ]
+    },
+    "status": { "alive": true, "conditions": [] },
+    "art": { "prompt": "A medieval market square at midday, canvas stalls, crowds, baskets of fish and cloth, oil painting style", "image": null }
+  },
+  "npc-jonas": {
+    "identity": { "name": "Jonas", "kind": "npc", "description": "A wiry young dockhand, knuckles raw from rope, eyes darting toward the lashed-down sloop." },
+    "persona": { "personality": "Jumpy and overworked, talks fast, desperate not to lose this job. Loyal to the other dockhands.", "backstory": "Hired three months ago. Saw something the night the Siren's Kiss came in that he wishes he hadn't.", "voice": "Quick, clipped, lots of 'look' and 'listen'. Drops his aitches." },
+    "knowledge": {
+      "facts": [
+        "The Siren's Kiss came in past midnight and unloaded under oilcloth — no manifest, no inspection.",
+        "Old Thom's boat hasn't moved in three days; his nets are still wet on the rail.",
+        "The harbormaster waved the sloop through himself and told the hands to go home early."
+      ],
+      "secrets": [
+        "Jonas pocketed a sealed packet that fell from a crate — he's too scared to open it or hand it back.",
+        "He heard a man weeping inside the locked cargo before it was carried off into the dark."
+      ]
+    },
+    "agent": { "enabled": true, "accent": "#5aa9a9" },
+    "status": { "alive": true, "conditions": [] },
+    "place": { "locationId": "loc-docks", "connections": [] },
+    "inventory": { "items": [] },
+    "flags": { "trust_player": 0 }
+  },
+  "item-crate": {
+    "identity": { "name": "Lashed Cargo Crate", "kind": "item", "description": "A heavy crate under oilcloth, roped to an iron ring. No manifest. Something shifts faintly inside when the tide rocks the dock." },
+    "status": { "alive": true, "conditions": [] },
+    "place": { "locationId": "loc-docks", "connections": [] },
+    "flags": { "locked": true, "searched": false }
+  },
+  "item-net": {
+    "identity": { "name": "Wet Fishing Net", "kind": "item", "description": "A tangle of net still dripping seawater, draped over a piling — Old Thom's, by the frayed red marker knot." },
+    "status": { "alive": true, "conditions": [] },
+    "place": { "locationId": "loc-docks", "connections": [] }
+  },
+  "npc-liesl": {
+    "identity": { "name": "Liesl", "kind": "npc", "description": "A sharp-eyed stall-keeper with rings on every finger and a smile she keeps for paying customers." },
+    "persona": { "personality": "Shrewd, transactional, friendly only as far as coin reaches. Knows who buys what and never forgets a face.", "backstory": "Runs a 'curiosities' stall that doubles as a fence for anything that walks off a ship.", "voice": "Honeyed and brisk, calls everyone 'darling', prices everything twice." },
+    "knowledge": {
+      "facts": [
+        "Smuggled goods from the Siren's Kiss will surface at the market within the week — they always do.",
+        "The harbormaster has been spending coin he didn't used to have.",
+        "She'll buy almost anything, no questions asked — for a third of its worth."
+      ],
+      "secrets": [
+        "She already fenced one item off the Siren's Kiss: a signet ring she dares not display.",
+        "She knows Marta owes the harbormaster, and could be persuaded to say so — for a price."
+      ]
+    },
+    "agent": { "enabled": true, "accent": "#c46a9a" },
+    "status": { "alive": true, "conditions": [] },
+    "place": { "locationId": "loc-market", "connections": [] },
+    "inventory": { "items": [] },
+    "flags": { "trust_player": 0 }
+  },
+  "item-dagger": {
+    "identity": { "name": "Bone-handled Dagger", "kind": "item", "description": "A slim dagger with a yellowed bone grip, laid out on Liesl's stall. Cheap, sharp, and almost certainly stolen." },
+    "status": { "alive": true, "conditions": [] },
+    "place": { "locationId": "loc-market", "connections": [] },
+    "flags": { "forSale": true, "price": 5 }
+  },
+  "item-charm": {
+    "identity": { "name": "Salt-iron Charm", "kind": "item", "description": "A twist of black iron on a leather cord, sold to keep drowned spirits at bay. The dockhands all wear one." },
+    "status": { "alive": true, "conditions": [] },
+    "place": { "locationId": "loc-market", "connections": [] },
+    "flags": { "forSale": true, "price": 2 }
+  },
   "world-state": {
     "flags": {}
   }

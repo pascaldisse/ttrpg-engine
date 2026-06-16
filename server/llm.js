@@ -304,11 +304,12 @@ export class MockLlmClient {
     if (txt.includes('attack') || txt.includes('strike') || txt.includes('swing')) {
       ops = [{ op: 'damage', id: 'npc-marta', amount: 4 }];
     } else if (txt.includes('torch')) {
-      ops = [{ op: 'giveItem', id: 'pc-hero', item: { id: 'item-torch', name: 'Torch' } }];
+      // take (not giveItem) → the world item entity leaves the ground.
+      ops = [{ op: 'take', id: 'pc-hero', item: { id: 'item-torch', name: 'Wall Torch' } }];
     } else if (txt.includes('search') || txt.includes('examine') || txt.includes('force') ||
                txt.includes('pick') || txt.includes('lock') || txt.includes('strongbox') ||
                txt.includes('box') || txt.includes('key')) {
-      ops = [{ op: 'giveItem', id: 'pc-hero', item: { id: 'item-key', name: 'Brass Key' } }];
+      ops = [{ op: 'take', id: 'pc-hero', item: { id: 'item-key', name: 'Brass Key' } }];
     }
     return { parsed: { ops }, raw: JSON.stringify({ ops }), usage: { prompt_tokens: 80, completion_tokens: 20 } };
   }
@@ -358,12 +359,12 @@ export class MockLlmClient {
       });
     }
 
-    // Take/grab/pick up → no-check op
+    // Take/grab/pick up → no-check take op (world entity leaves the ground)
     if (txt.includes('take') || txt.includes('grab') || txt.includes('pick up')) {
       return this.#jsonResult({
         speakTo: null,
         checks: [],
-        ops: [{ op: 'giveItem', id: 'pc-hero', item: { id: 'item-torch', name: 'Torch' } }],
+        ops: [{ op: 'take', id: 'pc-hero', item: { id: 'item-torch', name: 'Wall Torch' } }],
       });
     }
 

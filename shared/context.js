@@ -7,6 +7,8 @@
  * will be extended from ruleset data (ruleset/system-prompt.txt + schema).
  */
 
+import { findPc, pcLocationId, entitiesAt, exitsFrom } from './space.js';
+
 /**
  * Build an ordered chat-message array for cache-friendly streaming.
  *
@@ -44,110 +46,109 @@ export function buildContext({ systemPrompt, look, history = [], action }) {
 }
 
 /**
- * Build a compact text "scene frame" from the entity store.
- * High-salience summary: current location, present NPCs/items, party stats.
+ * Build a compact text "scene frame" from the entity store — LOCATION-SCOPED.
+ *
+ * This is the single, canonical scene-frame generator (server/sense.js `look()`
+ * delegates here). It shows ONLY what is present at the PC's current location:
+ * the location itself + its exits, the NPCs and ground items HERE, the party,
+ * plus globally-relevant active quests and world flags. "Only what's HERE is
+ * present" — the whole world is never dumped into context at once.
  *
  * @param {Map<string,object>|Record<string,object>} entities
  * @returns {string}
  */
 export function buildLookFrame(entities) {
-  const entries = entities instanceof Map
-    ? [...entities.entries()]
-    : Object.entries(entities);
-
-  if (entries.length === 0) {
+  const map = entities instanceof Map ? entities : new Map(Object.entries(entities));
+  if (map.size === 0) {
     return 'Current scene: (empty — no entities loaded).';
   }
 
-  const locations = [];
-  const npcs = [];
-  const items = [];
-  const pcs = [];
-  const worldFlags = [];
+  const pc = findPc(map);
+  const locId = pcLocationId(map);
+  const locComps = locId ? map.get(locId) : null;
+  const parts = ['Current scene frame:'];
 
-  for (const [id, comps] of entries) {
-    const identity = comps.identity || {};
-    const kind = identity.kind || '?';
+  // ---- Current location (only) + its exits ----
+  if (locComps) {
+    const li = locComps.identity || {};
+    parts.push('\nLocation:');
+    parts.push(`- **${li.name || locId}** (${locId}): ${li.description || ''}`);
+    const exits = exitsFrom(map, locId).filter(e => e.exists);
+    if (exits.length > 0) {
+      parts.push('Exits (where you can go from here):');
+      for (const e of exits) {
+        const tName = ((map.get(e.targetId) || {}).identity || {}).name || e.targetId;
+        parts.push(`- ${e.label} → ${tName} (${e.targetId})`);
+      }
+    }
+  } else {
+    parts.push('\nLocation: (unknown — the party is nowhere in particular).');
+  }
 
-    switch (kind) {
-      case 'location': {
-        const desc = identity.description || '';
-        const name = identity.name || id;
-        locations.push(`- **${name}** (${id}): ${desc}`);
-        break;
-      }
-      case 'npc': {
-        const name = identity.name || id;
-        const status = comps.status || {};
-        const alive = status.alive !== false ? '' : ' [DEAD]';
-        const desc = identity.description ? ` — ${identity.description}` : '';
-        const place = comps.place || {};
-        const at = place.locationId ? ` (at ${place.locationId})` : '';
-        const persona = comps.persona || {};
-        const pers = persona.personality ? ` Personality: ${persona.personality}` : '';
-        npcs.push(`- **${name}** (${id})${alive}${at}${desc}${pers}`);
-        break;
-      }
-      case 'item': {
-        const name = identity.name || id;
-        const desc = identity.description ? ` — ${identity.description}` : '';
-        const place = comps.place || {};
-        const at = place.locationId ? ` (at ${place.locationId})` : '';
-        items.push(`- **${name}** (${id})${at}${desc}`);
-        break;
-      }
-      case 'pc': {
-        const name = identity.name || id;
-        const stats = comps.stats || {};
-        const hpStr = stats.hp !== undefined ? ` HP:${stats.hp}/${stats.maxHp}` : '';
-        const place = comps.place || {};
-        const at = place.locationId ? ` (at ${place.locationId})` : '';
-        const status = comps.status || {};
-        const conds = status.conditions && status.conditions.length > 0
-          ? ` Conditions: ${status.conditions.join(', ')}` : '';
-        pcs.push(`- **${name}** (${id})${at}${hpStr}${conds}`);
-        break;
-      }
-      case 'world-state': {
-        const flags = comps.flags || {};
-        for (const [k, v] of Object.entries(flags)) {
-          worldFlags.push(`- ${k}: ${JSON.stringify(v)}`);
-        }
-        break;
-      }
-      // presence, faction, quest — skip for P1 (no actionable context)
+  // ---- NPCs physically present HERE ----
+  const npcs = locId ? entitiesAt(map, locId, { kinds: ['npc'] }) : [];
+  if (npcs.length > 0) {
+    parts.push('\nNPCs present:');
+    for (const [id, comps] of npcs) {
+      const idn = comps.identity || {};
+      const desc = idn.description ? ` — ${idn.description}` : '';
+      const pers = (comps.persona || {}).personality ? ` Personality: ${comps.persona.personality}.` : '';
+      const agentTag = (comps.agent || {}).enabled ? ' [AGENT]' : '';
+      parts.push(`- **${idn.name || id}** (${id})${agentTag}${desc}${pers}`);
     }
   }
 
-  const parts = ['Current scene frame:'];
-
-  if (locations.length > 0) {
-    parts.push('\nLocation:');
-    parts.push(...locations);
-  }
-
-  if (npcs.length > 0) {
-    parts.push('\nNPCs present:');
-    parts.push(...npcs);
-  }
-
+  // ---- Ground items HERE (carried items have place.locationId === holder, so excluded) ----
+  const items = locId ? entitiesAt(map, locId, { kinds: ['item'] }) : [];
   if (items.length > 0) {
-    parts.push('\nItems:');
-    parts.push(...items);
+    parts.push('\nItems here:');
+    for (const [id, comps] of items) {
+      const idn = comps.identity || {};
+      const desc = idn.description ? ` — ${idn.description}` : '';
+      parts.push(`- **${idn.name || id}** (${id})${desc}`);
+    }
   }
 
-  if (pcs.length > 0) {
+  // ---- Party (the PC) ----
+  if (pc) {
+    const [pcId, comps] = pc;
+    const idn = comps.identity || {};
+    const stats = comps.stats || {};
+    const hpStr = stats.hp !== undefined ? ` HP:${stats.hp}/${stats.maxHp}` : '';
+    const status = comps.status || {};
+    const conds = (status.conditions || []).length > 0
+      ? ` Conditions: ${status.conditions.join(', ')}.` : '';
+    const inv = (comps.inventory || {}).items || [];
+    const carried = inv.length > 0
+      ? ` Carrying: ${inv.map(i => (typeof i === 'string' ? i : (i.name || i.id))).join(', ')}.`
+      : ' Carrying: nothing of note.';
     parts.push('\nParty:');
-    parts.push(...pcs);
+    parts.push(`- **${idn.name || pcId}** (${pcId})${hpStr}${conds}${carried}`);
   }
 
-  if (worldFlags.length > 0) {
+  // ---- Active quests (global) ----
+  const quests = [];
+  for (const [id, comps] of map) {
+    if ((comps.identity || {}).kind !== 'quest') continue;
+    const q = comps.quest || {};
+    if (q.phase === 'active' || q.phase === 'available') {
+      const steps = q.steps || [];
+      const cur = steps[q.currentStep || 0] || '';
+      quests.push(`- **${(comps.identity || {}).name || id}** (${id}) [${q.phase}] ${cur}`);
+    }
+  }
+  if (quests.length > 0) {
+    parts.push('\nActive quests:');
+    parts.push(...quests);
+  }
+
+  // ---- World flags (global; canonical entity id 'world-state') ----
+  const ws = map.get('world-state');
+  if (ws && ws.flags && Object.keys(ws.flags).length > 0) {
     parts.push('\nWorld flags:');
-    parts.push(...worldFlags);
-  }
-
-  if (parts.length === 1) {
-    parts.push('\n(No entities of interest in the current scene.)');
+    for (const [k, v] of Object.entries(ws.flags)) {
+      parts.push(`- ${k}: ${JSON.stringify(v)}`);
+    }
   }
 
   return parts.join('\n');

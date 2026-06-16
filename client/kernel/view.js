@@ -346,7 +346,7 @@ export class View {
 
     this._getTranscriptContainer().appendChild(entry);
     this._scrollToBottom();
-  },
+  }
 
   /**
    * Generalized streaming event handler — works for narration, dialogue, system.

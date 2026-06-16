@@ -114,11 +114,68 @@ const SEMANTIC_HANDLERS = {
     ];
   },
 
-  /** {op:'move', id, to} → set place {locationId: to} */
+  /** {op:'move', id, to} → merge place {locationId: to} (preserves connections) */
   move(entities, op) {
     return [
-      { op: 'set', id: op.id, component: 'place', value: { locationId: op.to } },
+      { op: 'merge', id: op.id, component: 'place', value: { locationId: op.to } },
     ];
+  },
+
+  /**
+   * {op:'take', id:<holderId>, item:{id, name?, qty?}} — pick a world object up.
+   * Adds it to the holder's inventory AND relocates the world item entity to be
+   * CARRIED (place.locationId = holderId), so it leaves the ground and stops
+   * showing in the location's scene frame. Name is derived from the world entity
+   * if the caller didn't supply one.
+   */
+  take(entities, op) {
+    const holderId = op.id;
+    const itemRef = op.item || {};
+    const itemId = itemRef.id || (typeof op.item === 'string' ? op.item : null);
+    if (!itemId) return [];
+
+    const ops = [];
+    const holder = entities.get(holderId);
+    if (holder) {
+      const inv = holder.inventory || {};
+      const curItems = Array.isArray(inv.items) ? [...inv.items] : [];
+      const already = curItems.some(i => (typeof i === 'string' ? i : i.id) === itemId);
+      if (!already) {
+        const worldItem = entities.get(itemId);
+        const name = itemRef.name || (worldItem && (worldItem.identity || {}).name) || itemId;
+        curItems.push({ id: itemId, name, qty: itemRef.qty || 1 });
+        ops.push({ op: 'set', id: holderId, component: 'inventory', value: { items: curItems } });
+      }
+    }
+    // Relocate the world item entity off the ground (only if it exists as an entity).
+    if (entities.has(itemId)) {
+      ops.push({ op: 'merge', id: itemId, component: 'place', value: { locationId: holderId } });
+    }
+    return ops;
+  },
+
+  /**
+   * {op:'drop', id:<holderId>, item:{id}, to?:<locationId>} — inverse of take.
+   * Removes the item from the holder's inventory and places the world item entity
+   * back on the ground at `to` (defaults to the holder's current location).
+   */
+  drop(entities, op) {
+    const holderId = op.id;
+    const itemId = (op.item && op.item.id) || (typeof op.item === 'string' ? op.item : null);
+    if (!itemId) return [];
+
+    const ops = [];
+    const holder = entities.get(holderId);
+    if (holder) {
+      const inv = holder.inventory || {};
+      const items = (inv.items || []).filter(i => (typeof i === 'string' ? i : i.id) !== itemId);
+      ops.push({ op: 'set', id: holderId, component: 'inventory', value: { items } });
+    }
+    const dest = op.to || (holder && holder.place && holder.place.locationId) || null;
+    if (entities.has(itemId) && dest) {
+      ops.push({ op: 'merge', id: itemId, component: 'place', value: { locationId: dest } });
+    }
+    return ops;
   },
 
   /** {op:'setFlag', key, value, id?} → merge flags on id (default 'world-state') */
