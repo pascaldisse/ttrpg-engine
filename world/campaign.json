@@ -1,0 +1,9 @@
+{
+  "start": { "scene": "tavern" },
+  "scenes": {
+    "tavern": {
+      "name": "The Salt & Sextant",
+      "description": "A weathered tavern by the docks. Salt-scored beams, candlelight, and the smell of rum."
+    }
+  }
+}

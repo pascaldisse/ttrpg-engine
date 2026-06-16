@@ -1,0 +1,42 @@
+{
+  "loc-tavern": {
+    "identity": { "name": "The Salt & Sextant", "kind": "location", "description": "A weathered dockside tavern, warm candlelight spilling onto cobblestones. Inside: oak beams, a long bar, and the low murmur of sailors." },
+    "place": {
+      "connections": [
+        { "targetId": "loc-docks", "label": "Down to the docks" },
+        { "targetId": "loc-market", "label": "Through the market square" }
+      ]
+    },
+    "status": { "alive": true, "conditions": [] },
+    "art": { "prompt": "A moody medieval tavern by the docks at night, candlelit windows, cobblestone streets, oil painting style", "image": null }
+  },
+  "npc-marta": {
+    "identity": { "name": "Marta", "kind": "npc", "description": "The tavern keeper — grey hair tied back, shrewd eyes, a knowing smirk." },
+    "persona": { "personality": "Skeptical but fair. Knows every sailor's story. Motherly toward regulars.", "backstory": "Former ship's cook. Bought the Salt & Sextant twenty years ago with her late husband's savings.", "voice": "Raspy, warm, uses sailor slang. Calls everyone 'love' or 'lad'. Speaks in short, earthy sentences." },
+    "knowledge": {
+      "facts": [
+        "The Siren's Kiss, a smuggler's sloop, docked last night with sealed cargo.",
+        "Old Thom the fisherman hasn't been seen in three days — his boat is still moored.",
+        "The harbormaster has been asking strange questions about recent shipments.",
+        "The back room is reserved for a private party tonight — no names given."
+      ],
+      "secrets": [
+        "She owes the harbormaster a debt — he knows about the smuggled goods she's turned a blind eye to.",
+        "She keeps a small lockbox under the bar with gold from a deal gone bad years ago."
+      ]
+    },
+    "agent": { "enabled": true, "accent": "#c9a227" },
+    "status": { "alive": true, "conditions": [] },
+    "place": { "locationId": "loc-tavern", "connections": [] },
+    "inventory": { "items": [{ "id": "item-keys", "name": "Brass keys", "qty": 1 }] },
+    "flags": { "trust_player": 0 }
+  },
+  "item-ale": {
+    "identity": { "name": "Dark Ale", "kind": "item", "description": "A frothing tankard of the house dark ale — nutty, with a hint of salt." },
+    "status": { "alive": true, "conditions": [] },
+    "place": { "locationId": "loc-tavern", "connections": [] }
+  },
+  "world-state": {
+    "flags": {}
+  }
+}
