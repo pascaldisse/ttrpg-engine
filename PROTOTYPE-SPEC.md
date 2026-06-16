@@ -347,6 +347,15 @@ Progress is also tracked in agent memory (`ttrpg-engine-project.md`).
 
 **Remaining (game-functional-first):** none — the loop-first roadmap (P0–P8) is complete.
 
+- **Player view ✅ (UX, post-roadmap)** the default client is now a **scoped player view**, not the god-mode
+  entity inspector. Right panel = a player HUD (You: name/level/XP/HP/inventory · Here: current location +
+  present NPCs/items/exits, all click-to-act via `view.onAction` → talk/attack/examine/take/go · Quests). Scene
+  area shows the current location's name + description. Scoping mirrors `shared/space.js` (only what's HERE is
+  shown), so off-screen rooms/NPCs no longer leak. Raw entity dump preserved behind a collapsed "Debug" details.
+  `tools/test-client.mjs` drives the real `View` against a stubbed DOM (scoping + render + action dispatch).
+  NOTE: this is **client-side** scoping (cosmetic) — the server still sends the full snapshot; true server-side
+  per-client info-hiding is a follow-up that matters for multiplayer/anti-peek, not single-player feel.
+
 **Deferred (explicitly later):** atmosphere (image/music — the old "P4"); the human **DM seat** (review/override/mood
 knob/canon-confirm); **multiplayer** (last). The architecture keeps all three open — see DESIGN-NOTES #1
 (human-playable agent seats via `agent.controller`/`presence.controller`) and §11 (atmosphere designed-in).
