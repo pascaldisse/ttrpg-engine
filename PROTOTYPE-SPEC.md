@@ -298,9 +298,9 @@ iterating.
 
 ## 13. Phased build path & progress (reprioritized — "fully functional game FIRST"; multiplayer last)
 
-**Status: P0–P5 DONE, committed** (git `3635b7e` P0–P2, `9600972` P3, `8865abf` P4, `cf0559a`+`f9df809` P5;
-P0–P4 verified on real DeepSeek, P5 combat is deterministic/no-LLM). Progress is also tracked in agent
-memory (`ttrpg-engine-project.md`).
+**Status: P0–P6 DONE, committed** (git `3635b7e` P0–P2, `9600972` P3, `8865abf` P4, `cf0559a`+`f9df809` P5,
+`ffa8ffd` P6; P0–P4 verified on real DeepSeek, P5 combat + P6 quests/progression are deterministic/no-LLM).
+Progress is also tracked in agent memory (`ttrpg-engine-project.md`).
 
 - **P0 — Skeleton (the GAIA spine) ✅** WS+HTTP hub, `Session` store, op apply/broadcast/journal, snapshot,
   framework-free reconciler client, `tools/patch.mjs`, sample world. No LLM.
@@ -325,9 +325,13 @@ memory (`ttrpg-engine-project.md`).
   vs `stats.ac`, damage via the `damage` op; victory/defeat/flee. Deterministic (no LLM); attacking a
   non-hostile stays on the narrative path (the "swappable" seam). Combat HUD in the client.
 
+- **P6 — Quests & progression ✅** trigger-driven quest state machine (`shared/quests.js`: flag/atLocation/
+  hasItem/dead/allDead triggers) re-evaluated after every turn (`server/quests.js`); completion grants rewards
+  (items + XP); `shared/progression.js` 5e XP/leveling (proficiency + maxHp on level-up). Combat victory awards
+  kill-XP. Demo quest threads travel→combat→loot. `TTRPG_SEED` env for reproducible sessions. Quest/XP HUD.
+
 **Remaining (game-functional-first):**
-- **P6 — Quests & progression (NEXT):** quest state machine advances from events/checks; rewards; XP/leveling.
-- **P7 — Rules-as-data (the moat):** load a ruleset bundle (schema ext + check defs + system prompt) — SRD, then
+- **P7 — Rules-as-data, the moat (NEXT):** load a ruleset bundle (schema ext + check defs + system prompt) — SRD, then
   **DSA** (3d20 roll-under + QS via the pluggable check engine; `checks.js` already has the `comparator:'ge'|'le'` seam).
 - **P8 — World generation:** procgen bones + LLM "charges it with meaning", generated once → fixed data.
 
