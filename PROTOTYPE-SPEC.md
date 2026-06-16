@@ -298,8 +298,9 @@ iterating.
 
 ## 13. Phased build path & progress (reprioritized — "fully functional game FIRST"; multiplayer last)
 
-**Status: P0–P4 DONE, verified on real DeepSeek, committed** (git `3635b7e` P0–P2, `9600972` P3, `8865abf` P4).
-Progress is also tracked in agent memory (`ttrpg-engine-project.md`).
+**Status: P0–P5 DONE, committed** (git `3635b7e` P0–P2, `9600972` P3, `8865abf` P4, `cf0559a`+`f9df809` P5;
+P0–P4 verified on real DeepSeek, P5 combat is deterministic/no-LLM). Progress is also tracked in agent
+memory (`ttrpg-engine-project.md`).
 
 - **P0 — Skeleton (the GAIA spine) ✅** WS+HTTP hub, `Session` store, op apply/broadcast/journal, snapshot,
   framework-free reconciler client, `tools/patch.mjs`, sample world. No LLM.
@@ -318,10 +319,14 @@ Progress is also tracked in agent memory (`ttrpg-engine-project.md`).
   LLM `move` backstop), `take`/`drop` (taken items leave the ground), multi-room world (docks + market with scoped
   NPCs). Also fixed a `view.js` SyntaxError that broke the browser client + made `adjudicate` parsing lenient.
 
+- **P5 — Combat ✅** structured encounters (`shared/combat.js` pure engine + `server/combat.js` orchestrator):
+  attacking a `flags.hostile` entity starts an encounter; **initiative drives the floor/turn system** (enemy
+  AI turns auto-resolve, the player's turn pauses for input — DESIGN-NOTES #2); attacks via `resolveCheck('attack')`
+  vs `stats.ac`, damage via the `damage` op; victory/defeat/flee. Deterministic (no LLM); attacking a
+  non-hostile stays on the narrative path (the "swappable" seam). Combat HUD in the client.
+
 **Remaining (game-functional-first):**
-- **P5 — Combat (NEXT):** JRPG encounter behind an `Encounter` handoff; **initiative = first use of the floor/turn system**
-  (DESIGN-NOTES #2); attacks/damage via `resolveCheck`; victory/defeat; swappable (narrative default).
-- **P6 — Quests & progression:** quest state machine advances from events/checks; rewards; XP/leveling.
+- **P6 — Quests & progression (NEXT):** quest state machine advances from events/checks; rewards; XP/leveling.
 - **P7 — Rules-as-data (the moat):** load a ruleset bundle (schema ext + check defs + system prompt) — SRD, then
   **DSA** (3d20 roll-under + QS via the pluggable check engine; `checks.js` already has the `comparator:'ge'|'le'` seam).
 - **P8 — World generation:** procgen bones + LLM "charges it with meaning", generated once → fixed data.
