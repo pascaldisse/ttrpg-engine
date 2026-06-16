@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "start": "npm run dev",
     "dev": "concurrently -k \"node --env-file-if-exists=.env server/index.js\" \"vite\"",
     "server": "node --env-file-if-exists=.env server/index.js",
     "worldgen": "node --env-file-if-exists=.env tools/worldgen.mjs",
