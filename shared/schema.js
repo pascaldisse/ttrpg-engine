@@ -42,6 +42,7 @@ export const SCHEMA = {
       cha: { doc: 'Charisma score (5e: 1-30).', range: [1, 30] },
       proficiency: { doc: 'Proficiency bonus (5e: 2-6).', range: [2, 6] },
       level: { doc: 'Character level.', range: [1, 20] },
+      ac: { doc: 'Armor Class — DC for incoming attacks.', range: [1, 40] },
     },
   },
   inventory: {
@@ -122,6 +123,19 @@ export const SCHEMA = {
       model: { doc: 'Optional LlmClient model override.' },
       systemPrompt: { doc: 'Optional explicit system prompt; else derived from persona.' },
       accent: { doc: 'UI accent color (hex) for this NPC\'s dialogue chip.' },
+    },
+  },
+  encounter: {
+    doc: 'Active combat encounter (the floor/turn system). Lives on the singleton entity id "encounter".',
+    default: { active: false, round: 0, order: [], turnIndex: 0, mode: 'initiative', enemies: [], allies: [] },
+    fields: {
+      active:    { doc: 'Is a combat encounter in progress?' },
+      round:     { doc: 'Current round number (1-based once started).' },
+      order:     { doc: 'Initiative order: array of combatant entity ids, highest initiative first.' },
+      turnIndex: { doc: 'Index into order whose turn it is.' },
+      mode:      { doc: 'Turn mode.', enum: ['initiative', 'free', 'round-robin'] },
+      enemies:   { doc: 'Entity ids hostile to the party.' },
+      allies:    { doc: 'Entity ids on the party side (incl. the PC).' },
     },
   },
   persist: {

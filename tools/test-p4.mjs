@@ -36,7 +36,7 @@ function ok(name) { console.log(`  ✅ ${name}`); passed++; }
   assert.deepEqual(npcsHere.sort(), ['npc-marta'], 'only Marta is in the tavern');
 
   const npcsDocks = entitiesAt(ents, 'loc-docks', { kinds: ['npc'] }).map(([id]) => id);
-  assert.deepEqual(npcsDocks.sort(), ['npc-jonas'], 'only Jonas is at the docks');
+  assert.deepEqual(npcsDocks.sort(), ['npc-jonas', 'npc-smuggler', 'npc-thug'], 'Jonas plus enemies are at the docks');
 
   ok('location queries return only co-located entities');
 }

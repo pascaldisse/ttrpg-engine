@@ -51,6 +51,17 @@ export class View {
       case 'set':
       case 'merge':
         this._updateEntity(event.id, event.component);
+        if (event.id === 'encounter') {
+          this._renderEncounterHud();
+        } else {
+          const enc = this.store.entities.get('encounter');
+          if (enc && enc.encounter && enc.encounter.active) {
+            const allCombatants = new Set([...(enc.encounter.order || [])]);
+            if (allCombatants.has(event.id)) {
+              this._renderEncounterHud();
+            }
+          }
+        }
         break;
       case 'despawn':
         this._removeEntity(event.id);
@@ -77,6 +88,8 @@ export class View {
     for (const [id, comps] of this.store.entities) {
       this._addEntity(id);
     }
+
+    this._renderEncounterHud();
   }
 
   // ---- Entity list ----
@@ -205,6 +218,7 @@ export class View {
       case 'presence': container.appendChild(this._renderPresence(value)); break;
       case 'knowledge': container.appendChild(this._renderKnowledge(value)); break;
       case 'agent': container.appendChild(this._renderAgent(value)); break;
+      case 'encounter': container.appendChild(this._renderEncounter(value)); break;
       default:
         container.appendChild(el('div', { className: 'text-gray-400 italic' }, [
           typeof value === 'object' ? JSON.stringify(value).slice(0, 100) : String(value),
@@ -609,5 +623,96 @@ export class View {
     if (log) {
       log.scrollTop = log.scrollHeight;
     }
+  }
+
+  // ---- Combat HUD (P5) ----
+
+  _renderEncounterHud() {
+    const entity = this.store.entities.get('encounter');
+    const enc = entity && entity.encounter ? entity.encounter : null;
+
+    if (!enc || !enc.active) {
+      // Restore placeholder
+      clear(this.sceneAreaEl);
+      this.sceneAreaEl.className = 'col-span-8 bg-gray-900 rounded-lg border border-gray-700 flex items-center justify-center min-h-[200px]';
+      this.sceneAreaEl.appendChild(el('span', { className: 'text-gray-600 text-sm' }, ['[ scene image — P4 ]']));
+      return;
+    }
+
+    const round = enc.round;
+    const order = enc.order || [];
+    const turnIndex = enc.turnIndex;
+    const enemies = new Set(enc.enemies || []);
+
+    clear(this.sceneAreaEl);
+    this.sceneAreaEl.className = 'col-span-8 bg-gray-900 rounded-lg border border-gray-700 p-3 min-h-[200px] overflow-y-auto';
+
+    // Round header
+    this.sceneAreaEl.appendChild(
+      el('div', { className: 'text-center mb-3' }, [
+        el('span', { className: 'text-lg font-bold text-yellow-400' }, [`⚔ Round ${round}`]),
+      ])
+    );
+
+    // Initiative order rows
+    const orderContainer = el('div', { className: 'space-y-1' });
+
+    for (let i = 0; i < order.length; i++) {
+      const id = order[i];
+      const comps = this.store.entities.get(id);
+      if (!comps) continue;
+
+      const identity = comps.identity || {};
+      const stats = comps.stats || {};
+      const status = comps.status || {};
+      const name = identity.name || id;
+      const hp = stats.hp ?? '?';
+      const maxHp = stats.maxHp ?? '?';
+      const alive = status.alive !== false;
+      const isCurrent = i === turnIndex;
+      const isEnemy = enemies.has(id);
+
+      const hpPercent = maxHp > 0 ? Math.max(0, Math.min(100, (hp / maxHp) * 100)) : 100;
+      const barColor = hpPercent > 50 ? 'bg-green-500' : hpPercent > 25 ? 'bg-yellow-500' : 'bg-red-500';
+
+      const row = el('div', {
+        className: `flex items-center gap-2 p-2 rounded ${isCurrent ? 'bg-gray-700 border border-yellow-600' : ''} ${!alive ? 'opacity-50' : ''}`,
+      }, [
+        el('span', { className: 'text-xs text-gray-500 w-6 shrink-0' }, [String(i + 1)]),
+        el('span', {
+          className: `font-medium text-sm ${alive ? (isEnemy ? 'text-red-300' : 'text-blue-300') : 'text-gray-500 line-through'}`,
+          textContent: name + (isCurrent ? ' ◀' : ''),
+        }),
+        el('div', { className: 'flex-1 h-4 bg-gray-800 rounded overflow-hidden ml-2' }, [
+          el('div', {
+            className: `h-full ${barColor} rounded transition-all`,
+            style: `width:${hpPercent}%`,
+          }),
+        ]),
+        el('span', { className: 'text-xs text-gray-400 w-16 text-right shrink-0' }, [
+          `${hp}/${maxHp}`,
+        ]),
+      ]);
+
+      orderContainer.appendChild(row);
+    }
+
+    this.sceneAreaEl.appendChild(orderContainer);
+  }
+
+  _renderEncounter(v) {
+    const orderPreview = (v.order || []).map(id => {
+      const comps = this.store.entities.get(id);
+      return comps && comps.identity ? comps.identity.name : id;
+    }).join(' → ');
+
+    return el('div', { className: 'text-gray-300 space-y-0.5' }, [
+      el('div', {}, [`Active: ${v.active ? 'yes' : 'no'}`]),
+      el('div', {}, [`Round: ${v.round} · Turn: ${v.turnIndex}`]),
+      el('div', {}, [`Mode: ${v.mode}`]),
+      el('div', {}, [`Allies: ${(v.allies || []).join(', ')}`]),
+      el('div', {}, [`Enemies: ${(v.enemies || []).join(', ')}`]),
+      el('div', {}, [`Order: ${orderPreview}`]),
+    ].filter(Boolean));
   }
 }
