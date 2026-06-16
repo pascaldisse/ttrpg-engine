@@ -15,6 +15,7 @@ import { SCHEMA } from '../shared/schema.js';
 import { validateOpBatch } from '../shared/ops.js';
 import { createLlmClient } from './llm.js';
 import { createTurnEngine } from './turn.js';
+import { createCombatEngine } from './combat.js';
 import { createDmAgent } from './agents/dm-agent.js';
 import { createNpcAgent } from './agents/npc-agent.js';
 import * as sense from './sense.js';
@@ -42,9 +43,13 @@ const llm = createLlmClient();
 const dmAgent = createDmAgent({ session, broadcast, applyAndBroadcast, llm });
 const npcAgent = createNpcAgent({ session, broadcast, applyAndBroadcast, llm });
 
+// ---- Combat Engine (structured encounters; deterministic, no LLM) ----
+
+const combat = createCombatEngine({ session, broadcast, applyAndBroadcast });
+
 // ---- Turn Engine ----
 
-const turnEngine = createTurnEngine({ session, broadcast, applyAndBroadcast, dmAgent, npcAgent });
+const turnEngine = createTurnEngine({ session, broadcast, applyAndBroadcast, dmAgent, npcAgent, combat });
 
 /**
  * After applying a batch of ops, fire the turn engine for any action ops.

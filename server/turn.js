@@ -41,7 +41,7 @@ export const MOVE_INTENT_RE = /^\s*(?:(?:i(?:'d| would)?\s+(?:like|want|wish|lov
  * @param {object} params.npcAgent
  * @returns {{runTurn: (actionOp:object) => Promise<void>}}
  */
-export function createTurnEngine({ session, broadcast, applyAndBroadcast, dmAgent, npcAgent }) {
+export function createTurnEngine({ session, broadcast, applyAndBroadcast, dmAgent, npcAgent, combat }) {
   /**
    * Move the PC to a connected location, then narrate the arrival.
    * The move itself is engine-applied (deterministic, already canon) so we do
@@ -106,6 +106,22 @@ export function createTurnEngine({ session, broadcast, applyAndBroadcast, dmAgen
           return;
         }
         // ambiguous / no exit matched → fall through to adjudication (move backstop)
+      }
+
+      // 2.6 Combat (no LLM): if an encounter is active, every action is a combat action.
+      if (combat && combat.inCombat()) {
+        await combat.handlePlayerAction(actionOp);
+        return;
+      }
+
+      // 2.7 Combat initiation (no LLM): attacking a present HOSTILE starts a structured
+      //     encounter. Attacking a non-hostile NPC falls through to the narrative path.
+      if (combat) {
+        const initiation = combat.detectInitiation(actionText);
+        if (initiation) {
+          await combat.startAndResolve(actionOp, initiation);
+          return;
+        }
       }
 
       // 3. Adjudicate: structured LLM call
