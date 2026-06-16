@@ -22,6 +22,9 @@ localStorage.setItem('ttrpg_who', who);
 const net = new NetClient(store, who);
 net.connect();
 
+// Let the scoped player HUD send actions (clickable NPCs / items / exits).
+view.onAction = (text) => net.sendAction(text);
+
 // ---- Wire action input ----
 
 const actionInput = document.getElementById('action-input');

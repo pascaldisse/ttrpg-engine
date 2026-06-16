@@ -35,8 +35,11 @@ export class View {
     // Stream-aware event rendering: map streamId → {element, text}
     this._streamEls = new Map();
 
-    // P6: quest tracker container (lazy-created)
-    this._questTrackerEl = null;
+    // Scoped player HUD container (lazy-created in #inspector).
+    this._playerHudEl = null;
+
+    // Set by main.js — clicking a present NPC / item / exit sends an action.
+    this.onAction = null;
 
     // Subscribe to store
     store.onChange((event) => this.handle(event));
@@ -50,31 +53,18 @@ export class View {
         break;
       case 'spawn':
         this._addEntity(event.id);
+        this._refreshScoped();
         break;
       case 'set':
       case 'merge':
         this._updateEntity(event.id, event.component);
-        if (event.id === 'encounter') {
-          this._renderEncounterHud();
-        } else {
-          const enc = this.store.entities.get('encounter');
-          if (enc && enc.encounter && enc.encounter.active) {
-            const allCombatants = new Set([...(enc.encounter.order || [])]);
-            if (allCombatants.has(event.id)) {
-              this._renderEncounterHud();
-            }
-          }
-        }
-        // P6: refresh quest tracker when quest or PC changes
-        {
-          const ent = this.store.entities.get(event.id);
-          if (ent && ent.identity && (ent.identity.kind === 'quest' || ent.identity.kind === 'pc')) {
-            this._renderQuestTracker();
-          }
-        }
+        // Presence-in-room, HP, quests, combat all depend on cross-entity state,
+        // so re-derive the scoped views wholesale (cheap, small DOM).
+        this._refreshScoped();
         break;
       case 'despawn':
         this._removeEntity(event.id);
+        this._refreshScoped();
         break;
       case 'event':
         this._handleEvent(event);
@@ -99,8 +89,13 @@ export class View {
       this._addEntity(id);
     }
 
+    this._refreshScoped();
+  }
+
+  /** Re-derive the scoped player HUD + the scene area (combat HUD or location). */
+  _refreshScoped() {
+    this._renderPlayerHud();
     this._renderEncounterHud();
-    this._renderQuestTracker();
   }
 
   // ---- Entity list ----
@@ -643,10 +638,8 @@ export class View {
     const enc = entity && entity.encounter ? entity.encounter : null;
 
     if (!enc || !enc.active) {
-      // Restore placeholder
-      clear(this.sceneAreaEl);
-      this.sceneAreaEl.className = 'col-span-8 bg-gray-900 rounded-lg border border-gray-700 flex items-center justify-center min-h-[200px]';
-      this.sceneAreaEl.appendChild(el('span', { className: 'text-gray-600 text-sm' }, ['[ scene image — P4 ]']));
+      // Not in combat → show the current location as the scene.
+      this._renderSceneLocation();
       return;
     }
 
@@ -711,88 +704,242 @@ export class View {
     this.sceneAreaEl.appendChild(orderContainer);
   }
 
-  // ---- Quest tracker (P6) ----
+  // ---- Scoped player view (You / Here / Quests) ----
+  //
+  // Mirrors shared/space.js scoping (findPc / entitiesAt / exits) so the player
+  // only sees the room they're in — present NPCs, items on the ground, and exits
+  // — never the whole world. NPCs/items/exits are clickable to act.
 
-  _renderQuestTracker() {
-    // Ensure container exists in the inspector, above the entity list
-    if (!this._questTrackerEl || !this._questTrackerEl.parentNode) {
-      const inspector = document.getElementById('inspector');
-      const entityList = document.getElementById('entity-list');
-      if (!inspector || !entityList) return;
-
-      this._questTrackerEl = el('div', {
-        className: 'mb-3 p-2 bg-gray-800 rounded border border-gray-700 text-xs',
-      });
-      inspector.insertBefore(this._questTrackerEl, entityList);
+  /** Find the [id, comps] of the player character, or null. */
+  _findPc() {
+    for (const [id, comps] of this.store.entities) {
+      if ((comps.identity || {}).kind === 'pc') return [id, comps];
     }
+    return null;
+  }
 
-    clear(this._questTrackerEl);
-
-    // --- PC: level + XP ---
-    let pc = null;
-    for (const [, comps] of this.store.entities) {
-      if (comps.identity && comps.identity.kind === 'pc') {
-        pc = comps;
-        break;
-      }
+  /** Entities physically present at a location (carried items naturally excluded). */
+  _entitiesAt(locId, { kinds, includeDead = false, exclude } = {}) {
+    const out = [];
+    if (!locId) return out;
+    for (const [id, comps] of this.store.entities) {
+      if (id === locId || id === exclude) continue;
+      if ((comps.place || {}).locationId !== locId) continue;
+      const kind = (comps.identity || {}).kind;
+      if (kinds && !kinds.includes(kind)) continue;
+      if (!includeDead && (comps.status || {}).alive === false) continue;
+      out.push([id, comps]);
     }
+    return out;
+  }
 
-    if (pc && pc.stats) {
-      const level = pc.stats.level || 1;
-      const xp = pc.stats.xp || 0;
-      this._questTrackerEl.appendChild(
-        el('div', { className: 'flex items-center gap-2 mb-2' }, [
-          el('span', { className: 'text-yellow-400 font-bold' }, [`Lv ${level}`]),
-          el('span', { className: 'text-gray-400' }, [`· XP ${xp}`]),
-        ]),
+  /** Send a player action (set by main.js → net.sendAction). */
+  _send(text) {
+    if (typeof this.onAction === 'function') this.onAction(text);
+  }
+
+  /** A clickable HUD row that dispatches an action when clicked. */
+  _clickRow(label, actionText, colorClass = 'text-gray-300') {
+    const row = el('div', {
+      className: `text-sm ${colorClass} cursor-pointer rounded px-1 py-0.5 hover:bg-gray-700/60 transition-colors`,
+      onclick: () => this._send(actionText),
+      title: actionText,
+    }, [label]);
+    return row;
+  }
+
+  /** Rebuild the scoped player HUD inside #inspector (above the debug dump). */
+  _renderPlayerHud() {
+    const inspector = document.getElementById('inspector');
+    if (!inspector) return;
+    if (!this._playerHudEl || !this._playerHudEl.parentNode) {
+      this._playerHudEl = el('div', { id: 'player-hud', className: 'flex flex-col gap-3' });
+      inspector.insertBefore(this._playerHudEl, inspector.firstChild);
+    }
+    clear(this._playerHudEl);
+
+    const pcPair = this._findPc();
+    if (!pcPair) {
+      this._playerHudEl.appendChild(
+        el('div', { className: 'text-gray-600 text-sm italic p-2' }, ['Waiting for the world…']),
       );
+      return;
+    }
+    const [pcId, pc] = pcPair;
+    const locId = (pc.place || {}).locationId || null;
+    const loc = locId ? this.store.entities.get(locId) : null;
+
+    this._playerHudEl.appendChild(this._renderYouCard(pc));
+    this._playerHudEl.appendChild(this._renderHereCard(pcId, locId, loc));
+    const quests = this._renderQuestsCard();
+    if (quests) this._playerHudEl.appendChild(quests);
+  }
+
+  /** "You" card: name, level/XP, HP bar, conditions, inventory chips. */
+  _renderYouCard(pc) {
+    const identity = pc.identity || {};
+    const stats = pc.stats || {};
+    const status = pc.status || {};
+    const hp = stats.hp ?? '?';
+    const maxHp = stats.maxHp ?? '?';
+    const pct = (typeof hp === 'number' && maxHp > 0) ? Math.max(0, Math.min(100, (hp / maxHp) * 100)) : 100;
+    const barColor = pct > 50 ? 'bg-green-500' : pct > 25 ? 'bg-yellow-500' : 'bg-red-500';
+    const inv = (pc.inventory && pc.inventory.items) || [];
+    const conds = status.conditions || [];
+
+    return el('div', { className: 'p-3 bg-gray-800 rounded border border-gray-700' }, [
+      el('div', { className: 'flex items-baseline justify-between mb-2' }, [
+        el('span', { className: 'font-semibold text-gray-100' }, [identity.name || 'You']),
+        el('span', { className: 'text-xs text-yellow-400 font-bold' }, [
+          `Lv ${stats.level || 1}`,
+          el('span', { className: 'text-gray-500 font-normal ml-1' }, [`· XP ${stats.xp || 0}`]),
+        ]),
+      ]),
+      el('div', { className: 'flex items-center gap-2 mb-2' }, [
+        el('div', { className: 'flex-1 h-3 bg-gray-900 rounded overflow-hidden' }, [
+          el('div', { className: `h-full ${barColor} rounded transition-all`, style: `width:${pct}%` }),
+        ]),
+        el('span', { className: 'text-xs text-gray-400 w-14 text-right' }, [`${hp}/${maxHp}`]),
+      ]),
+      conds.length ? el('div', { className: 'text-xs text-amber-400/80 mb-2' }, [conds.join(', ')]) : '',
+      el('div', { className: 'flex flex-wrap gap-1' },
+        inv.length
+          ? inv.map(i => el('span', { className: 'text-xs px-2 py-0.5 bg-gray-700 rounded text-gray-300' },
+              [(i.name || i.id) + (i.qty > 1 ? ` ×${i.qty}` : '')]))
+          : [el('span', { className: 'text-xs text-gray-600 italic' }, ['(empty pack)'])],
+      ),
+    ].filter(Boolean));
+  }
+
+  /** "Here" card: current location + present people / items / exits, all clickable. */
+  _renderHereCard(pcId, locId, loc) {
+    const card = el('div', { className: 'p-3 bg-gray-800 rounded border border-gray-700 flex flex-col gap-2' });
+    card.appendChild(el('div', { className: 'text-[10px] uppercase tracking-wider text-gray-500' }, ['Here']));
+    card.appendChild(el('div', { className: 'font-medium text-gray-200' }, [
+      (loc && loc.identity && loc.identity.name) || 'Nowhere',
+    ]));
+
+    const npcs = this._entitiesAt(locId, { kinds: ['npc'], includeDead: true, exclude: pcId });
+    const items = this._entitiesAt(locId, { kinds: ['item'], exclude: pcId });
+    const exits = ((loc && loc.place && loc.place.connections) || [])
+      .filter(c => c.targetId && this.store.entities.get(c.targetId));
+
+    if (npcs.length) {
+      const group = el('div', {}, [
+        el('div', { className: 'text-[10px] uppercase tracking-wider text-gray-600 mb-0.5' }, ['People']),
+      ]);
+      for (const [id, comps] of npcs) {
+        const name = (comps.identity || {}).name || id;
+        if ((comps.status || {}).alive === false) {
+          group.appendChild(el('div', { className: 'text-sm text-gray-600 line-through px-1 py-0.5' }, [name]));
+          continue;
+        }
+        const hostile = !!(comps.flags && comps.flags.hostile);
+        group.appendChild(this._clickRow(
+          (hostile ? '⚔ ' : '💬 ') + name,
+          hostile ? `attack the ${name}` : `talk to ${name}`,
+          hostile ? 'text-red-300' : 'text-blue-300',
+        ));
+      }
+      card.appendChild(group);
     }
 
-    // --- Quests ---
+    if (items.length) {
+      const group = el('div', {}, [
+        el('div', { className: 'text-[10px] uppercase tracking-wider text-gray-600 mb-0.5' }, ['Items']),
+      ]);
+      for (const [id, comps] of items) {
+        const name = (comps.identity || {}).name || id;
+        group.appendChild(el('div', { className: 'flex items-center justify-between gap-2 px-1 py-0.5' }, [
+          el('span', {
+            className: 'text-sm text-gray-300 cursor-pointer hover:text-white',
+            onclick: () => this._send(`examine the ${name}`),
+            title: `examine the ${name}`,
+          }, [name]),
+          el('button', {
+            className: 'text-[10px] px-1.5 py-0.5 bg-gray-700 hover:bg-gray-600 rounded text-gray-300 shrink-0',
+            onclick: (e) => { e.stopPropagation(); this._send(`take the ${name}`); },
+            title: `take the ${name}`,
+          }, ['take']),
+        ]));
+      }
+      card.appendChild(group);
+    }
+
+    if (exits.length) {
+      const group = el('div', {}, [
+        el('div', { className: 'text-[10px] uppercase tracking-wider text-gray-600 mb-0.5' }, ['Exits']),
+      ]);
+      for (const c of exits) {
+        const target = this.store.entities.get(c.targetId);
+        const tname = (target && target.identity && target.identity.name) || c.label || c.targetId;
+        group.appendChild(this._clickRow(`→ ${c.label || tname}`, `go to ${tname}`, 'text-emerald-300'));
+      }
+      card.appendChild(group);
+    }
+
+    if (!npcs.length && !items.length && !exits.length) {
+      card.appendChild(el('div', { className: 'text-sm text-gray-600 italic' }, ['Nothing of note here.']));
+    }
+
+    return card;
+  }
+
+  /** "Quests" card (active + recently completed), or null if none. */
+  _renderQuestsCard() {
     const quests = [];
     for (const [, comps] of this.store.entities) {
-      if (comps.identity && comps.identity.kind === 'quest') {
+      if ((comps.identity || {}).kind === 'quest' && comps.quest && comps.quest.phase !== 'available') {
         quests.push(comps);
       }
     }
+    if (!quests.length) return null;
 
-    if (quests.length === 0) return;
-
-    // Divider
-    this._questTrackerEl.appendChild(
-      el('div', { className: 'border-t border-gray-700 my-1.5' }),
-    );
-
-    // Header
-    this._questTrackerEl.appendChild(
-      el('div', { className: 'text-gray-500 uppercase tracking-wider mb-1 text-[10px]' }, ['Quests']),
-    );
+    const card = el('div', { className: 'p-3 bg-gray-800 rounded border border-gray-700 flex flex-col gap-1' });
+    card.appendChild(el('div', { className: 'text-[10px] uppercase tracking-wider text-gray-500' }, ['Quests']));
 
     for (const q of quests) {
       const qc = q.quest;
-      if (!qc) continue;
-
       const name = (q.identity && q.identity.name) || '?';
-      const phase = qc.phase;
       const steps = qc.steps || [];
       const cur = qc.currentStep ?? 0;
-
-      if (phase === 'completed') {
-        this._questTrackerEl.appendChild(
-          el('div', { className: 'text-gray-600 line-through' }, [`✓ ${name} — Complete`]),
-        );
-      } else if (phase === 'active') {
-        const stepData = steps[cur];
-        const stepText = typeof stepData === 'string'
-          ? stepData
-          : (stepData && stepData.text ? stepData.text : `Step ${cur + 1}`);
-        this._questTrackerEl.appendChild(
-          el('div', { className: 'mb-1' }, [
-            el('div', { className: 'text-gray-300 font-medium' }, [name]),
-            el('div', { className: 'text-gray-500' }, [`${cur + 1}/${steps.length} — ${stepText}`]),
-          ]),
-        );
+      if (qc.phase === 'completed') {
+        card.appendChild(el('div', { className: 'text-gray-600 line-through text-sm' }, [`✓ ${name}`]));
+      } else {
+        const sd = steps[cur];
+        const stepText = typeof sd === 'string' ? sd : (sd && sd.text ? sd.text : `Step ${cur + 1}`);
+        card.appendChild(el('div', {}, [
+          el('div', { className: 'text-gray-300 font-medium text-sm' }, [name]),
+          el('div', { className: 'text-gray-500 text-xs' }, [`${cur + 1}/${steps.length} — ${stepText}`]),
+        ]));
       }
+    }
+    return card;
+  }
+
+  /** Scene area (non-combat): the current location as title + prose + image slot. */
+  _renderSceneLocation() {
+    const pcPair = this._findPc();
+    const locId = pcPair ? (pcPair[1].place || {}).locationId : null;
+    const loc = locId ? this.store.entities.get(locId) : null;
+
+    clear(this.sceneAreaEl);
+    if (!loc) {
+      this.sceneAreaEl.className = 'col-span-8 bg-gray-900 rounded-lg border border-gray-700 flex items-center justify-center min-h-[200px]';
+      this.sceneAreaEl.appendChild(el('span', { className: 'text-gray-600 text-sm' }, ['[ scene ]']));
+      return;
+    }
+
+    const id = loc.identity || {};
+    this.sceneAreaEl.className = 'col-span-8 bg-gray-900 rounded-lg border border-gray-700 p-5 min-h-[200px] overflow-y-auto flex flex-col';
+    this.sceneAreaEl.appendChild(
+      el('div', { className: 'flex-1 min-h-[120px] rounded bg-gray-800/40 border border-gray-800 flex items-center justify-center mb-4' }, [
+        el('span', { className: 'text-gray-700 text-xs' }, ['[ scene image ]']),
+      ]),
+    );
+    this.sceneAreaEl.appendChild(el('div', { className: 'text-amber-300/90 font-semibold text-lg mb-1' }, [id.name || 'Here']));
+    if (id.description) {
+      this.sceneAreaEl.appendChild(el('div', { className: 'text-gray-400 text-sm leading-relaxed' }, [id.description]));
     }
   }
 

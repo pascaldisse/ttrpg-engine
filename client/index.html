@@ -19,12 +19,15 @@
       <span class="text-gray-600 text-sm">[ scene image — P4 ]</span>
     </div>
 
-    <!-- Inspector panel -->
+    <!-- Player HUD panel (scoped: You / Here / Quests). Raw entity dump collapsed in debug below. -->
     <div id="inspector" class="col-span-4 bg-gray-900 rounded-lg border border-gray-700 p-3 overflow-y-auto flex flex-col gap-2">
-      <h3 class="text-xs uppercase tracking-wider text-gray-500 mb-1">Entities</h3>
-      <div id="entity-list" class="flex flex-col gap-1 text-sm">
-        <!-- Populated by kernel/view.js -->
-      </div>
+      <!-- #player-hud is inserted as the first child by kernel/view.js -->
+      <details id="debug-entities" class="mt-auto pt-2 text-xs text-gray-600 border-t border-gray-800">
+        <summary class="cursor-pointer hover:text-gray-400 select-none">Debug · all entities</summary>
+        <div id="entity-list" class="flex flex-col gap-1 text-sm mt-1">
+          <!-- Populated by kernel/view.js -->
+        </div>
+      </details>
     </div>
 
     <!-- Narration log -->
