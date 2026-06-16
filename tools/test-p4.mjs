@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { buildLookFrame } from '../shared/context.js';
 import { pcLocationId, entitiesAt, exitsFrom, isConnected, resolveExit, findPc } from '../shared/space.js';
 import { expandOp } from '../shared/effects.js';
+import { MOVE_INTENT_RE } from '../server/turn.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const worldPath = path.resolve(__dirname, '..', 'world', 'scenes', 'tavern.json');
@@ -144,6 +145,21 @@ function ok(name) { console.log(`  ✅ ${name}`); passed++; }
   assert.ok(!/Marta/.test(frame), 'frame no longer shows Marta (left behind in tavern)');
 
   ok('move re-scopes the scene frame to the new location');
+}
+
+// ---- 7. movement-intent gate: matches travel, ignores look/take/ask (no false teleports) ----
+{
+  const ents = loadWorld();
+  for (const m of ['go to the docks', "I'd like to visit the docks", 'head for the market', 'leave for the docks', 'walk into the back room', "let's go to the market"]) {
+    assert.ok(MOVE_INTENT_RE.test(m), `gate should match movement: "${m}"`);
+  }
+  for (const m of ['examine the door to the docks', 'look at the road to the market', 'take the torch', 'ask Marta about the docks', 'search the crate']) {
+    assert.ok(!MOVE_INTENT_RE.test(m), `gate must NOT match: "${m}"`);
+  }
+  // end-to-end: a gated phrase resolves to the right exit
+  assert.ok(MOVE_INTENT_RE.test("I'd like to visit the docks"));
+  assert.equal(resolveExit(ents, 'loc-tavern', "I'd like to visit the docks"), 'loc-docks');
+  ok('movement-intent gate: matches travel, ignores look/take/ask/search');
 }
 
 console.log(`\n${passed} P4 checks passed.`);

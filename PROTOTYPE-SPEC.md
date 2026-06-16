@@ -298,8 +298,8 @@ iterating.
 
 ## 13. Phased build path & progress (reprioritized — "fully functional game FIRST"; multiplayer last)
 
-**Status: P0–P3 DONE, verified on real DeepSeek, committed** (git `3635b7e` P0–P2, `9600972` P3). Progress is also
-tracked in agent memory (`ttrpg-engine-project.md`).
+**Status: P0–P4 DONE, verified on real DeepSeek, committed** (git `3635b7e` P0–P2, `9600972` P3, `8865abf` P4).
+Progress is also tracked in agent memory (`ttrpg-engine-project.md`).
 
 - **P0 — Skeleton (the GAIA spine) ✅** WS+HTTP hub, `Session` store, op apply/broadcast/journal, snapshot,
   framework-free reconciler client, `tools/patch.mjs`, sample world. No LLM.
@@ -313,10 +313,13 @@ tracked in agent memory (`ttrpg-engine-project.md`).
   canonical ops), PC with 5e stats, DM-as-referee `adjudicate()` + outcome-aware `narrateOutcome()` +
   **`canonize()`** (narrate-freely-then-canonize keeps state in sync with the story). System lane shows rolls.
 
+- **P4 — Exploration ✅** location graph (`shared/space.js`), location-scoped scene frame (one canonical generator;
+  `sense.look` delegates) + location-scoped routing, movement (deterministic intent-gate + `resolveExit`, with an
+  LLM `move` backstop), `take`/`drop` (taken items leave the ground), multi-room world (docks + market with scoped
+  NPCs). Also fixed a `view.js` SyntaxError that broke the browser client + made `adjudicate` parsing lenient.
+
 **Remaining (game-functional-first):**
-- **P4 — Exploration (NEXT):** movement between locations (place graph), `examine`/`use`/`take` intents, "only what's
-  *here* is present", a multi-room world. Makes the world navigable.
-- **P5 — Combat:** JRPG encounter behind an `Encounter` handoff; **initiative = first use of the floor/turn system**
+- **P5 — Combat (NEXT):** JRPG encounter behind an `Encounter` handoff; **initiative = first use of the floor/turn system**
   (DESIGN-NOTES #2); attacks/damage via `resolveCheck`; victory/defeat; swappable (narrative default).
 - **P6 — Quests & progression:** quest state machine advances from events/checks; rewards; XP/leveling.
 - **P7 — Rules-as-data (the moat):** load a ruleset bundle (schema ext + check defs + system prompt) — SRD, then
