@@ -298,8 +298,8 @@ iterating.
 
 ## 13. Phased build path & progress (reprioritized — "fully functional game FIRST"; multiplayer last)
 
-**Status: P0–P6 DONE, committed** (git `3635b7e` P0–P2, `9600972` P3, `8865abf` P4, `cf0559a`+`f9df809` P5,
-`ffa8ffd` P6; P0–P4 verified on real DeepSeek, P5 combat + P6 quests/progression are deterministic/no-LLM).
+**Status: P0–P7 DONE, committed** (git `3635b7e` P0–P2, `9600972` P3, `8865abf` P4, `cf0559a`+`f9df809` P5,
+`ffa8ffd` P6, `513d28a` P7; P0–P4 verified on real DeepSeek, P5/P6/P7 are deterministic/no-LLM).
 Progress is also tracked in agent memory (`ttrpg-engine-project.md`).
 
 - **P0 — Skeleton (the GAIA spine) ✅** WS+HTTP hub, `Session` store, op apply/broadcast/journal, snapshot,
@@ -330,10 +330,13 @@ Progress is also tracked in agent memory (`ttrpg-engine-project.md`).
   (items + XP); `shared/progression.js` 5e XP/leveling (proficiency + maxHp on level-up). Combat victory awards
   kill-XP. Demo quest threads travel→combat→loot. `TTRPG_SEED` env for reproducible sessions. Quest/XP HUD.
 
+- **P7 — Rules-as-data, the moat ✅** ruleset bundles under `world/ruleset/<id>/` (`ruleset.js` exporting
+  meta/components/checks + `system.md`), loaded at boot via `TTRPG_RULESET` (`server/ruleset.js` `loadRuleset` →
+  `registerComponents`/`registerChecks` + DM system prompt). Proven on **srd5e** (d20-vs-DC) AND **dsa5**
+  (3d20 roll-under + Quality Levels) — same engine, rules as data; each check def brings its own `resolve()`.
+
 **Remaining (game-functional-first):**
-- **P7 — Rules-as-data, the moat (NEXT):** load a ruleset bundle (schema ext + check defs + system prompt) — SRD, then
-  **DSA** (3d20 roll-under + QS via the pluggable check engine; `checks.js` already has the `comparator:'ge'|'le'` seam).
-- **P8 — World generation:** procgen bones + LLM "charges it with meaning", generated once → fixed data.
+- **P8 — World generation (NEXT):** procgen bones + LLM "charges it with meaning", generated once → fixed data.
 
 **Deferred (explicitly later):** atmosphere (image/music — the old "P4"); the human **DM seat** (review/override/mood
 knob/canon-confirm); **multiplayer** (last). The architecture keeps all three open — see DESIGN-NOTES #1
