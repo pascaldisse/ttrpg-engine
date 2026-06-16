@@ -42,6 +42,7 @@ export const SCHEMA = {
       cha: { doc: 'Charisma score (5e: 1-30).', range: [1, 30] },
       proficiency: { doc: 'Proficiency bonus (5e: 2-6).', range: [2, 6] },
       level: { doc: 'Character level.', range: [1, 20] },
+      xp: { doc: 'Experience points.', range: [0, 9999999] },
       ac: { doc: 'Armor Class — DC for incoming attacks.', range: [1, 40] },
     },
   },
@@ -69,11 +70,13 @@ export const SCHEMA = {
   },
   quest: {
     doc: 'Tracked objective with phases.',
-    default: { phase: 'available', steps: [], currentStep: 0 },
+    default: { phase: 'available', steps: [], currentStep: 0, triggers: [], rewards: { xp: 0, items: [] } },
     fields: {
       phase: { doc: 'Current phase.', enum: ['available', 'active', 'completed', 'failed'] },
       steps: { doc: 'Array of step descriptions / objectives.' },
       currentStep: { doc: 'Index into steps (0-based).', range: [0, 999] },
+      triggers: { doc: 'Per-step trigger descriptors; triggers[i] gates advancing FROM step i. null = manual/never.' },
+      rewards: { doc: 'Granted when the quest completes: { xp:number, items:[{id,name}] }.' },
     },
   },
   status: {

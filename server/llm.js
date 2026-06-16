@@ -306,6 +306,8 @@ export class MockLlmClient {
     } else if (txt.includes('torch')) {
       // take (not giveItem) → the world item entity leaves the ground.
       ops = [{ op: 'take', id: 'pc-hero', item: { id: 'item-torch', name: 'Wall Torch' } }];
+    } else if (txt.includes('crate')) {
+      ops = [{ op: 'take', id: 'pc-hero', item: { id: 'item-crate', name: 'Lashed Cargo Crate' } }];
     } else if (txt.includes('search') || txt.includes('examine') || txt.includes('force') ||
                txt.includes('pick') || txt.includes('lock') || txt.includes('strongbox') ||
                txt.includes('box') || txt.includes('key')) {

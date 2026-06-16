@@ -27,7 +27,7 @@ const FLEE_RE = /\b(flee|run away|run|escape|retreat|disengage|get away|leg it|w
 const ENCOUNTER_ID = 'encounter';
 const MAX_TURN_GUARD = 100; // safety against any pathological loop
 
-export function createCombatEngine({ session, broadcast, applyAndBroadcast }) {
+export function createCombatEngine({ session, broadcast, applyAndBroadcast, awardXp }) {
   // ---- small helpers ----
 
   const pcId = () => { const pc = findPc(session.entities); return pc ? pc[0] : null; };
@@ -151,6 +151,15 @@ export function createCombatEngine({ session, broadcast, applyAndBroadcast }) {
     if (result === 'victory') {
       banner('end', 'The fight is over — you stand victorious.', { outcome: 'victory' });
       narrate('The last of them drops. Breathing hard, you survey the aftermath — the docks fall quiet but for the slap of water against the pilings.');
+      // Award kill XP for the defeated enemies (P6 progression).
+      if (typeof awardXp === 'function' && enc) {
+        let xp = 0;
+        for (const id of enc.enemies || []) {
+          const e = session.entities.get(id);
+          xp += (e && e.stats && e.stats.xp) || 0;
+        }
+        if (xp > 0) awardXp(xp, 'combat victory');
+      }
     } else if (result === 'defeat') {
       banner('end', 'You have fallen.', { outcome: 'defeat' });
       narrate('The world tilts and goes dark. Your strength fails you — this is where your story falters.');

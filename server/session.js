@@ -35,6 +35,11 @@ export class Session {
     const savesDir = path.join(seedDir, 'saves');
     if (!fs.existsSync(savesDir)) fs.mkdirSync(savesDir, { recursive: true });
     this._savePath = path.join(savesDir, `session_${saveSlot}.json`);
+
+    // Optional deterministic PRNG seed override (reproducible sessions / tests / sharing).
+    // A loaded save still wins (load() may set its own seed); applies to fresh sessions.
+    const envSeed = parseInt(process.env.TTRPG_SEED, 10);
+    if (Number.isFinite(envSeed)) this.seed = envSeed;
   }
 
   // ---- Listeners ----

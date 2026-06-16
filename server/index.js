@@ -16,6 +16,7 @@ import { validateOpBatch } from '../shared/ops.js';
 import { createLlmClient } from './llm.js';
 import { createTurnEngine } from './turn.js';
 import { createCombatEngine } from './combat.js';
+import { createQuestEngine } from './quests.js';
 import { createDmAgent } from './agents/dm-agent.js';
 import { createNpcAgent } from './agents/npc-agent.js';
 import * as sense from './sense.js';
@@ -43,13 +44,18 @@ const llm = createLlmClient();
 const dmAgent = createDmAgent({ session, broadcast, applyAndBroadcast, llm });
 const npcAgent = createNpcAgent({ session, broadcast, applyAndBroadcast, llm });
 
-// ---- Combat Engine (structured encounters; deterministic, no LLM) ----
+// ---- Quest + progression engine (deterministic, no LLM) ----
 
-const combat = createCombatEngine({ session, broadcast, applyAndBroadcast });
+const questEngine = createQuestEngine({ session, broadcast, applyAndBroadcast });
+
+// ---- Combat Engine (structured encounters; deterministic, no LLM) ----
+// Combat awards kill-XP through the quest engine's shared awardXp.
+
+const combat = createCombatEngine({ session, broadcast, applyAndBroadcast, awardXp: questEngine.awardXp });
 
 // ---- Turn Engine ----
 
-const turnEngine = createTurnEngine({ session, broadcast, applyAndBroadcast, dmAgent, npcAgent, combat });
+const turnEngine = createTurnEngine({ session, broadcast, applyAndBroadcast, dmAgent, npcAgent, combat, questEngine });
 
 /**
  * After applying a batch of ops, fire the turn engine for any action ops.

@@ -35,6 +35,9 @@ export class View {
     // Stream-aware event rendering: map streamId → {element, text}
     this._streamEls = new Map();
 
+    // P6: quest tracker container (lazy-created)
+    this._questTrackerEl = null;
+
     // Subscribe to store
     store.onChange((event) => this.handle(event));
   }
@@ -60,6 +63,13 @@ export class View {
             if (allCombatants.has(event.id)) {
               this._renderEncounterHud();
             }
+          }
+        }
+        // P6: refresh quest tracker when quest or PC changes
+        {
+          const ent = this.store.entities.get(event.id);
+          if (ent && ent.identity && (ent.identity.kind === 'quest' || ent.identity.kind === 'pc')) {
+            this._renderQuestTracker();
           }
         }
         break;
@@ -90,6 +100,7 @@ export class View {
     }
 
     this._renderEncounterHud();
+    this._renderQuestTracker();
   }
 
   // ---- Entity list ----
@@ -698,6 +709,91 @@ export class View {
     }
 
     this.sceneAreaEl.appendChild(orderContainer);
+  }
+
+  // ---- Quest tracker (P6) ----
+
+  _renderQuestTracker() {
+    // Ensure container exists in the inspector, above the entity list
+    if (!this._questTrackerEl || !this._questTrackerEl.parentNode) {
+      const inspector = document.getElementById('inspector');
+      const entityList = document.getElementById('entity-list');
+      if (!inspector || !entityList) return;
+
+      this._questTrackerEl = el('div', {
+        className: 'mb-3 p-2 bg-gray-800 rounded border border-gray-700 text-xs',
+      });
+      inspector.insertBefore(this._questTrackerEl, entityList);
+    }
+
+    clear(this._questTrackerEl);
+
+    // --- PC: level + XP ---
+    let pc = null;
+    for (const [, comps] of this.store.entities) {
+      if (comps.identity && comps.identity.kind === 'pc') {
+        pc = comps;
+        break;
+      }
+    }
+
+    if (pc && pc.stats) {
+      const level = pc.stats.level || 1;
+      const xp = pc.stats.xp || 0;
+      this._questTrackerEl.appendChild(
+        el('div', { className: 'flex items-center gap-2 mb-2' }, [
+          el('span', { className: 'text-yellow-400 font-bold' }, [`Lv ${level}`]),
+          el('span', { className: 'text-gray-400' }, [`· XP ${xp}`]),
+        ]),
+      );
+    }
+
+    // --- Quests ---
+    const quests = [];
+    for (const [, comps] of this.store.entities) {
+      if (comps.identity && comps.identity.kind === 'quest') {
+        quests.push(comps);
+      }
+    }
+
+    if (quests.length === 0) return;
+
+    // Divider
+    this._questTrackerEl.appendChild(
+      el('div', { className: 'border-t border-gray-700 my-1.5' }),
+    );
+
+    // Header
+    this._questTrackerEl.appendChild(
+      el('div', { className: 'text-gray-500 uppercase tracking-wider mb-1 text-[10px]' }, ['Quests']),
+    );
+
+    for (const q of quests) {
+      const qc = q.quest;
+      if (!qc) continue;
+
+      const name = (q.identity && q.identity.name) || '?';
+      const phase = qc.phase;
+      const steps = qc.steps || [];
+      const cur = qc.currentStep ?? 0;
+
+      if (phase === 'completed') {
+        this._questTrackerEl.appendChild(
+          el('div', { className: 'text-gray-600 line-through' }, [`✓ ${name} — Complete`]),
+        );
+      } else if (phase === 'active') {
+        const stepData = steps[cur];
+        const stepText = typeof stepData === 'string'
+          ? stepData
+          : (stepData && stepData.text ? stepData.text : `Step ${cur + 1}`);
+        this._questTrackerEl.appendChild(
+          el('div', { className: 'mb-1' }, [
+            el('div', { className: 'text-gray-300 font-medium' }, [name]),
+            el('div', { className: 'text-gray-500' }, [`${cur + 1}/${steps.length} — ${stepText}`]),
+          ]),
+        );
+      }
+    }
   }
 
   _renderEncounter(v) {

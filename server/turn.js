@@ -41,7 +41,7 @@ export const MOVE_INTENT_RE = /^\s*(?:(?:i(?:'d| would)?\s+(?:like|want|wish|lov
  * @param {object} params.npcAgent
  * @returns {{runTurn: (actionOp:object) => Promise<void>}}
  */
-export function createTurnEngine({ session, broadcast, applyAndBroadcast, dmAgent, npcAgent, combat }) {
+export function createTurnEngine({ session, broadcast, applyAndBroadcast, dmAgent, npcAgent, combat, questEngine }) {
   /**
    * Move the PC to a connected location, then narrate the arrival.
    * The move itself is engine-applied (deterministic, already canon) so we do
@@ -59,10 +59,27 @@ export function createTurnEngine({ session, broadcast, applyAndBroadcast, dmAgen
   }
 
   /**
-   * Orchestrate a turn with full adjudication → checks → narration → consequences.
+   * Public entry: run the turn, then re-evaluate quests/progression (P6) on EVERY
+   * path (combat, movement, talk, world action) via a finally — so triggers fire
+   * off whatever just happened (reached a location, took an item, won a fight).
    * @param {object} actionOp — {op:'action', text, by}
    */
   async function runTurn(actionOp) {
+    try {
+      await runTurnInner(actionOp);
+    } finally {
+      if (questEngine) {
+        try { await questEngine.evaluate(); }
+        catch (e) { console.error('[turn] quest evaluate error:', e.message); }
+      }
+    }
+  }
+
+  /**
+   * Orchestrate a turn with full adjudication → checks → narration → consequences.
+   * @param {object} actionOp — {op:'action', text, by}
+   */
+  async function runTurnInner(actionOp) {
     const actionText = (actionOp.text || '').trim();
     if (!actionText) return;
 

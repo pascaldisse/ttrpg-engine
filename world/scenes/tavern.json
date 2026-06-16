@@ -22,7 +22,7 @@
   },
   "pc-hero": {
     "identity": { "name": "Rowan", "kind": "pc", "description": "A young adventurer with quick hands and quicker wits. Carries a worn longsword and a lucky coin." },
-    "stats": { "str": 14, "dex": 16, "con": 12, "int": 10, "wis": 13, "cha": 11, "hp": 20, "maxHp": 20, "ac": 13, "proficiency": 2, "level": 1 },
+    "stats": { "str": 14, "dex": 16, "con": 12, "int": 10, "wis": 13, "cha": 11, "hp": 20, "maxHp": 20, "ac": 13, "proficiency": 2, "level": 1, "xp": 0 },
     "status": { "alive": true, "conditions": [] },
     "place": { "locationId": "loc-tavern", "connections": [] },
     "inventory": { "items": [
@@ -161,7 +161,7 @@
   "npc-smuggler": {
     "identity": { "name": "Siren's-Kiss Smuggler", "kind": "npc", "description": "A scarred sailor with a salt-stained coat and a cutlass. Guards the lashed crate with a territorial glare." },
     "persona": { "personality": "Nervous but dangerous — won't hesitate if cornered." },
-    "stats": { "str": 14, "dex": 12, "con": 13, "int": 10, "wis": 10, "cha": 10, "hp": 11, "maxHp": 11, "ac": 13 },
+    "stats": { "str": 14, "dex": 12, "con": 13, "int": 10, "wis": 10, "cha": 10, "hp": 11, "maxHp": 11, "ac": 13, "xp": 50 },
     "status": { "alive": true, "conditions": [] },
     "place": { "locationId": "loc-docks", "connections": [] },
     "flags": { "hostile": true, "damage": "1d6" }
@@ -169,10 +169,28 @@
   "npc-thug": {
     "identity": { "name": "Dockside Thug", "kind": "npc", "description": "A broad-shouldered hired hand with a rusty knife and a mean spirit. Does what he's paid for." },
     "persona": { "personality": "Dull and obedient — follows the smuggler's lead." },
-    "stats": { "str": 12, "dex": 10, "con": 11, "int": 10, "wis": 10, "cha": 9, "hp": 8, "maxHp": 8, "ac": 12 },
+    "stats": { "str": 12, "dex": 10, "con": 11, "int": 10, "wis": 10, "cha": 9, "hp": 8, "maxHp": 8, "ac": 12, "xp": 25 },
     "status": { "alive": true, "conditions": [] },
     "place": { "locationId": "loc-docks", "connections": [] },
     "flags": { "hostile": true, "damage": "1d4" }
+  },
+  "quest-siren": {
+    "identity": { "name": "The Siren's Kiss", "kind": "quest", "description": "A smuggler's sloop docked with sealed cargo. What are they hiding?" },
+    "quest": {
+      "phase": "active",
+      "currentStep": 0,
+      "steps": [
+        "Go down to the docks and find the smuggler's sloop.",
+        "Deal with the smugglers guarding the lashed cargo.",
+        "Take what they were hiding."
+      ],
+      "triggers": [
+        { "type": "atLocation", "id": "loc-docks" },
+        { "type": "allDead", "ids": ["npc-smuggler", "npc-thug"] },
+        { "type": "hasItem", "id": "item-crate" }
+      ],
+      "rewards": { "xp": 250, "items": [{ "id": "item-signet", "name": "Smuggler's Signet Ring" }] }
+    }
   },
   "world-state": {
     "flags": {}
