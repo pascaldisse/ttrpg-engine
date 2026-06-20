@@ -13,6 +13,8 @@
  * Canonical ops pass through unchanged.
  */
 
+import { upsertStatus } from './statuses.js';
+
 /**
  * Expand ONE semantic op into an array of canonical ops (spawn/set/merge/despawn).
  * Canonical ops pass through as-is (wrapped in array).
@@ -176,6 +178,25 @@ const SEMANTIC_HANDLERS = {
       ops.push({ op: 'merge', id: itemId, component: 'place', value: { locationId: dest } });
     }
     return ops;
+  },
+
+  /**
+   * {op:'applyStatus', id, kind, magnitude?, remaining, source?} → merge statuses.list
+   * with the status added (same kind+source is refreshed, not stacked). C1 status engine.
+   */
+  applyStatus(entities, op) {
+    const comps = entities.get(op.id);
+    const cur = (comps && comps.statuses && Array.isArray(comps.statuses.list)) ? comps.statuses.list : [];
+    const list = upsertStatus(cur, { kind: op.kind, magnitude: op.magnitude, remaining: op.remaining, source: op.source });
+    return [{ op: 'merge', id: op.id, component: 'statuses', value: { list } }];
+  },
+
+  /** {op:'removeStatus', id, kind} → merge statuses.list with all entries of `kind` dropped. */
+  removeStatus(entities, op) {
+    const comps = entities.get(op.id);
+    const cur = (comps && comps.statuses && Array.isArray(comps.statuses.list)) ? comps.statuses.list : [];
+    const list = cur.filter(s => s.kind !== op.kind);
+    return [{ op: 'merge', id: op.id, component: 'statuses', value: { list } }];
   },
 
   /** {op:'setFlag', key, value, id?} → merge flags on id (default 'world-state') */

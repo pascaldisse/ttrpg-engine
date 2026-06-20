@@ -1,5 +1,7 @@
 node_modules/
 world/saves/
+saves/
+**/saves/
 client/dist/
 *.log
 .env

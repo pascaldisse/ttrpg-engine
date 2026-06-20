@@ -14,9 +14,9 @@
     "identity": { "name": "The Apocalypse Kid", "kind": "pc", "description": "Leather jacket, katana across the back, a wedding you were definitely not invited to. You don't know why the world is ending, but you intend to outlive it." },
     "stats": { "hp": 28, "maxHp": 28, "armor": 2, "level": 1, "xp": 0 },
     "moves": { "list": [
-      { "name": "Katana Sword Slash", "type": "damage", "damage": "1d6", "special": "Clean steel, close range." },
-      { "name": "Rage Roar", "type": "buff", "duration": 2, "special": "+2 damage for 2 rounds." },
-      { "name": "Chi Healing", "type": "heal", "damage": "1d6", "special": "Heal yourself 1d6 (cannot exceed max Health)." }
+      { "name": "Katana Sword Slash", "type": "damage", "damage": "1d6", "cost": 1, "special": "Clean steel, close range." },
+      { "name": "Rage Roar", "type": "buff", "status": "rage", "magnitude": 2, "duration": 2, "cost": 1, "special": "+2 damage for 2 rounds." },
+      { "name": "Chi Healing", "type": "heal", "damage": "1d6", "cost": 1, "special": "Heal yourself 1d6 (cannot exceed max Health)." }
     ]},
     "status": { "alive": true, "conditions": [] },
     "place": { "locationId": "loc-chapel", "connections": [] },
@@ -58,6 +58,7 @@
     "stats": { "hp": 4, "maxHp": 4, "armor": 2, "level": 1, "xp": 10 },
     "status": { "alive": true, "conditions": [] },
     "place": { "locationId": "loc-chapel", "connections": [] },
+    "moves": { "list": [ { "name": "Claw", "type": "damage", "damage": "1d3", "cost": 1, "special": "Rake with filthy claws." } ] },
     "flags": { "hostile": true, "damage": "1d3" }
   },
   "npc-imp-2": {
@@ -66,6 +67,7 @@
     "stats": { "hp": 4, "maxHp": 4, "armor": 2, "level": 1, "xp": 10 },
     "status": { "alive": true, "conditions": [] },
     "place": { "locationId": "loc-chapel", "connections": [] },
+    "moves": { "list": [ { "name": "Claw", "type": "damage", "damage": "1d3", "cost": 1, "special": "Rake with filthy claws." } ] },
     "flags": { "hostile": true, "damage": "1d3" }
   },
   "npc-imp-3": {
@@ -74,6 +76,7 @@
     "stats": { "hp": 4, "maxHp": 4, "armor": 2, "level": 1, "xp": 10 },
     "status": { "alive": true, "conditions": [] },
     "place": { "locationId": "loc-chapel", "connections": [] },
+    "moves": { "list": [ { "name": "Claw", "type": "damage", "damage": "1d3", "cost": 1, "special": "Rake with filthy claws." } ] },
     "flags": { "hostile": true, "damage": "1d3" }
   },
   "npc-imp-4": {
@@ -82,6 +85,7 @@
     "stats": { "hp": 4, "maxHp": 4, "armor": 2, "level": 1, "xp": 10 },
     "status": { "alive": true, "conditions": [] },
     "place": { "locationId": "loc-chapel", "connections": [] },
+    "moves": { "list": [ { "name": "Claw", "type": "damage", "damage": "1d3", "cost": 1, "special": "Rake with filthy claws." } ] },
     "flags": { "hostile": true, "damage": "1d3" }
   },
 

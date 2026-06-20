@@ -20,6 +20,7 @@
  */
 
 import { resolveCheck, abilityMod } from './checks.js';
+import { aggregateModifiers } from './statuses.js';
 
 // ---- Helpers ----
 
@@ -163,10 +164,14 @@ export function currentCombatant(encounter) {
  * @returns {{hit:boolean, crit:boolean, fumble:boolean, attackRoll:number, ac:number, damage:number, summary:string, ability:string, weaponDie:string}}
  */
 export function resolveAttack({ attackerId, targetId }, entities, rng, rules = {}) {
+  // C1: status modifiers (rage +dmg, armor-aura +armor, flawless-aim autoHit, …).
+  // Computed by the engine and threaded into the resolver — the bundle stays import-free.
+  const mods = aggregateModifiers(entities, attackerId, targetId);
+
   // Rules-as-data seam: a ruleset may supply an entirely different attack model
   // (e.g. Necrotopia's d6 > Armor). Delegate wholesale when present.
   if (typeof rules.resolveAttack === 'function') {
-    return rules.resolveAttack({ attackerId, targetId }, entities, rng);
+    return rules.resolveAttack({ attackerId, targetId }, entities, rng, mods);
   }
 
   const attacker = entities.get(attackerId);
@@ -184,17 +189,18 @@ export function resolveAttack({ attackerId, targetId }, entities, rng, rules = {
   const ability = attackAbility(attacker);
   const weaponDieStr = readDamageDie(attacker, entities);
   const weaponDie = parseDamageDie(weaponDieStr);
-  const targetAc = target?.stats?.ac ?? 10;
+  const targetAc = (target?.stats?.ac ?? 10) + (mods.armorDelta || 0);
 
-  // Resolve the attack check
+  // Resolve the attack check (hitDelta nudges the effective AC; autoHit forces a hit)
   const checkResult = resolveCheck(
-    { check: 'attack', ability, dc: targetAc },
+    { check: 'attack', ability, dc: targetAc - (mods.hitDelta || 0) },
     { stats: attacker.stats || {}, proficiency: attacker.proficiency ?? attacker.stats?.proficiency ?? 0 },
     rng,
   );
+  const hit = mods.autoHit ? true : checkResult.success;
 
   let damage = 0;
-  if (checkResult.success) {
+  if (hit) {
     const abilityScore = (attacker.stats || {})[ability] ?? 10;
     const mod = abilityMod(abilityScore);
     const diceCount = checkResult.crit ? weaponDie.count * 2 : weaponDie.count;
@@ -202,7 +208,7 @@ export function resolveAttack({ attackerId, targetId }, entities, rng, rules = {
     for (let i = 0; i < diceCount; i++) {
       diceTotal += rng.d(weaponDie.sides);
     }
-    damage = Math.max(1, diceTotal + mod);
+    damage = Math.max(1, diceTotal + mod + (mods.dmgDelta || 0));
   }
 
   const summary = checkResult.crit
@@ -214,7 +220,7 @@ export function resolveAttack({ attackerId, targetId }, entities, rng, rules = {
         : `d20(${checkResult.rolls[0]}) + ${checkResult.modifier} = ${checkResult.total} vs AC ${targetAc} → MISS`;
 
   return {
-    hit: checkResult.success,
+    hit,
     crit: checkResult.crit,
     fumble: checkResult.fumble,
     attackRoll: checkResult.rolls[0],
@@ -223,6 +229,50 @@ export function resolveAttack({ attackerId, targetId }, entities, rng, rules = {
     summary,
     ability,
     weaponDie: weaponDieStr,
+  };
+}
+
+/**
+ * Resolve a declared Move (C1). The neutral entry point: the engine computes the
+ * status modifiers (rage/armor/aim/…) and delegates to the ruleset's
+ * `combat.resolveMove(move, params, entities, rng, mods)`. A ruleset that ships no
+ * resolveMove gets a minimal default (heal / basic-attack-for-damage).
+ *
+ * Return shape: { ops:Op[], statusOps:Op[], summary:string, detail?:object }
+ *   - ops       — damage/heal semantic ops (engine expands + applies)
+ *   - statusOps — applyStatus semantic ops (engine expands + applies, broadcasts status lines)
+ *
+ * @param {object} move — a Move from the actor's moves.list
+ * @param {{actorId:string, targetId?:string}} params
+ * @param {Map<string,object>} entities
+ * @param {{d:(s:number)=>number}} rng
+ * @param {object} [rules] — ruleset combat override
+ */
+export function resolveMove(move, params, entities, rng, rules = {}) {
+  const mods = aggregateModifiers(entities, params.actorId, params.targetId);
+
+  if (typeof rules.resolveMove === 'function') {
+    return rules.resolveMove(move, params, entities, rng, mods);
+  }
+
+  // Minimal neutral default (rarely used — every move-using ruleset ships resolveMove).
+  const type = move.type || 'damage';
+  if (type === 'heal') {
+    const die = parseDamageDie(move.damage || '1d6');
+    let amt = 0;
+    for (let i = 0; i < die.count; i++) amt += rng.d(die.sides);
+    const tid = params.targetId || params.actorId;
+    return { ops: [{ op: 'heal', id: tid, amount: amt }], statusOps: [], summary: `${move.name}: heals ${amt}` };
+  }
+  if (type === 'buff' || type === 'stun' || type === 'utility') {
+    return { ops: [], statusOps: [], summary: `${move.name}` };
+  }
+  const r = resolveAttack({ attackerId: params.actorId, targetId: params.targetId }, entities, rng, rules);
+  return {
+    ops: r.hit && r.damage > 0 ? [{ op: 'damage', id: params.targetId, amount: r.damage }] : [],
+    statusOps: [],
+    summary: `${move.name}: ${r.summary}`,
+    detail: { hit: r.hit, damage: r.damage },
   };
 }
 

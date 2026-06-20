@@ -57,7 +57,7 @@ export const components = {
     default: { list: [] },
     fields: {
       list: {
-        doc: 'Array of { name, type, damage?, duration?, special? }. type ∈ damage|bleed|area|heal|buff|stun|utility|summon. damage is a die string like "1d6". duration is rounds for stuns/buffs. Buffs/stuns that target ENEMIES still require a successful hit roll.',
+        doc: 'Array of { name, type, damage?, duration?, cost?, status?, magnitude?, special? }. type ∈ damage|bleed|area|heal|buff|stun|utility|summon. damage is a die string like "1d6". duration is rounds/ticks for stuns/buffs/bleed. cost is the CTB action rank (C2; default 1). status names the applied status kind (buff/stun); magnitude its strength (bleed dmg/turn). Buffs/stuns that target ENEMIES still require a successful hit roll.',
       },
     },
   },
@@ -105,46 +105,179 @@ export const checks = {
   },
 };
 
+// ---- Statuses (EXTENSION SEAM in shared/statuses.js) ----
+//
+// The Move-table effects "with teeth". The engine ticks/aggregates these; this
+// bundle only supplies the data + tiny pure functions (no imports).
+
+export const statuses = {
+  // Damage-over-time: deals `magnitude` Health at the start of each of the bearer's turns.
+  bleed: {
+    doc: 'Bleed — deals `magnitude` damage at the start of each of the bearer\'s turns.',
+    tag: 'dot',
+    onTick: (t, s) => ({ ops: [{ op: 'damage', id: t.id, amount: s.magnitude || 1 }] }),
+  },
+  // Control: the bearer loses their turn while this is active.
+  stun: { doc: 'Stun — the bearer loses their turn.', tag: 'control', skipTurn: true },
+  // Buff: +2 damage on the bearer's attacks (Rage Roar).
+  rage: { doc: 'Rage — +2 damage on attacks.', tag: 'buff', modifyOutgoing: () => ({ dmgDelta: 2 }) },
+  // Buff: +1 effective Armor against incoming hits (Chi/armor aura).
+  'armor-aura': { doc: 'Armor aura — +1 effective Armor vs incoming hits.', tag: 'buff', modifyIncoming: () => ({ armorDelta: 1 }) },
+  // Buff: the bearer's attacks auto-hit (Skip Hit Rolls).
+  'flawless-aim': { doc: 'Flawless aim — attacks auto-hit (skip the hit roll).', tag: 'buff', modifyOutgoing: () => ({ autoHit: true }) },
+  // Debuff: -1 effective Armor on the bearer (armor-break / acid).
+  'armor-break': { doc: 'Armor break — -1 effective Armor on the bearer.', tag: 'debuff', modifyIncoming: () => ({ armorDelta: -1 }) },
+};
+
 // ---- Combat override (EXTENSION SEAM in shared/combat.js) ----
+
+/** Read an entity's display name (for area/move summaries). */
+function nameStub(entities, id) {
+  const e = entities.get(id);
+  return (e && e.identity && e.identity.name) || id;
+}
+
+/** Living enemies recorded on the encounter singleton (for area moves). */
+function livingEnemies(entities) {
+  const enc = (entities.get('encounter') || {}).encounter || {};
+  return (enc.enemies || []).filter(id => {
+    const e = entities.get(id);
+    return e && (e.status || {}).alive !== false;
+  });
+}
+
+/**
+ * One d6 > Armor hit roll, honoring engine-supplied status mods (armorDelta/hitDelta/autoHit).
+ * @returns {{hit:boolean, roll:number|null, armor:number}}
+ */
+function hitRoll(entities, targetId, rng, mods = {}) {
+  const armor = armorOf(entities.get(targetId)) + (mods.armorDelta || 0);
+  if (mods.autoHit) return { hit: true, roll: null, armor };
+  const roll = rng.d(6) + (mods.hitDelta || 0);
+  return { hit: roll > armor, roll, armor };
+}
+
+/** Roll a Move's damage die + level bonus + status dmgDelta. */
+function rollDamage(move, level, rng, mods = {}) {
+  const die = parseDie(move.damage || '1d6');
+  let total = 0;
+  for (let i = 0; i < die.count; i++) total += rng.d(die.sides);
+  return Math.max(1, total + Math.max(0, level - 1) + (mods.dmgDelta || 0));
+}
 
 /**
  * Necrotopia attack resolution: 1d6 > Armor to hit, then weapon/move die damage
- * (+1 per level above 1). No ability modifier, no crit-doubling. Same params and
- * return shape as the engine's default resolveAttack so the combat engine can call
- * it interchangeably.
+ * (+1 per level above 1). No ability modifier, no crit-doubling. `mods` carries the
+ * engine's aggregated status modifiers (rage/armor-aura/flawless-aim/…).
  */
-function necroResolveAttack({ attackerId, targetId }, entities, rng) {
+function necroResolveAttack({ attackerId, targetId }, entities, rng, mods = {}) {
   const attacker = entities.get(attackerId);
   const target = entities.get(targetId);
   if (!attacker || !target) {
     return { hit: false, crit: false, fumble: false, attackRoll: 0, ac: 0, damage: 0, summary: 'Invalid attacker or target.', ability: '—', weaponDie: '1d6' };
   }
 
-  const armor = armorOf(target);
-  const roll = rng.d(6);
-  const hit = roll > armor;
-
-  let damage = 0;
+  const { hit, roll, armor } = hitRoll(entities, targetId, rng, mods);
   const weaponDieStr = (attacker.flags && attacker.flags.damage) || '1d6';
+  let damage = 0;
   if (hit) {
-    const die = parseDie(weaponDieStr);
-    let total = 0;
-    for (let i = 0; i < die.count; i++) total += rng.d(die.sides);
     const level = (attacker.stats && attacker.stats.level) || 1;
-    damage = Math.max(1, total + Math.max(0, level - 1)); // +1 damage per level above 1
+    damage = rollDamage({ damage: weaponDieStr }, level, rng, mods);
   }
 
+  const shown = roll == null ? 'auto' : `d6(${roll})`;
   const summary = hit
-    ? `d6(${roll}) vs Armor ${armor} → HIT (${damage} damage)`
-    : `d6(${roll}) vs Armor ${armor} → MISS`;
+    ? `${shown} vs Armor ${armor} → HIT (${damage} damage)`
+    : `${shown} vs Armor ${armor} → MISS`;
 
-  return { hit, crit: false, fumble: false, attackRoll: roll, ac: armor, damage, summary, ability: '—', weaponDie: weaponDieStr };
+  return { hit, crit: false, fumble: false, attackRoll: roll == null ? 6 : roll, ac: armor, damage, summary, ability: '—', weaponDie: weaponDieStr };
+}
+
+/**
+ * Resolve a declared Move. Routes by `move.type`:
+ *   damage  — hit roll → on hit, weapon-die damage → {op:'damage'}
+ *   area    — hit roll vs every living enemy → damage each
+ *   heal    — roll the die → {op:'heal'} on self/ally (capped at maxHp by effects.js)
+ *   buff    — applyStatus on self (no hit roll) — kind from move.status (default 'rage')
+ *   stun    — hit roll → on hit applyStatus(target,'stun')
+ *   bleed   — hit roll → on hit applyStatus(target,'bleed', magnitude)
+ *   utility — no mechanical effect (narration carries it; C3 may route to the DM)
+ *
+ * @param {object} mods — engine-aggregated status modifiers
+ */
+function necroResolveMove(move, { actorId, targetId }, entities, rng, mods = {}) {
+  const type = move.type || 'damage';
+  const actor = entities.get(actorId);
+  const level = (actor && actor.stats && actor.stats.level) || 1;
+
+  if (type === 'heal') {
+    const die = parseDie(move.damage || '1d6');
+    let amt = 0;
+    for (let i = 0; i < die.count; i++) amt += rng.d(die.sides);
+    const tid = targetId || actorId;
+    return { ops: [{ op: 'heal', id: tid, amount: amt }], statusOps: [], summary: `${move.name}: restores ${amt} Health`, detail: { heal: amt } };
+  }
+
+  if (type === 'buff') {
+    const kind = move.status || 'rage';
+    const remaining = move.duration || 2;
+    const sop = { op: 'applyStatus', id: actorId, kind, remaining, source: actorId };
+    if (move.magnitude != null) sop.magnitude = move.magnitude;
+    return { ops: [], statusOps: [sop], summary: `${move.name}: ${kind} for ${remaining} turn(s)`, detail: { status: kind } };
+  }
+
+  if (type === 'utility') {
+    return { ops: [], statusOps: [], summary: `${move.name}`, detail: { utility: true } };
+  }
+
+  if (type === 'area') {
+    const enemies = livingEnemies(entities);
+    const ops = [];
+    const parts = [];
+    for (const tid of enemies) {
+      const h = hitRoll(entities, tid, rng, mods);
+      if (h.hit) {
+        const dmg = rollDamage(move, level, rng, mods);
+        ops.push({ op: 'damage', id: tid, amount: dmg });
+        parts.push(`${nameStub(entities, tid)} (${dmg})`);
+      } else {
+        parts.push(`${nameStub(entities, tid)} (miss)`);
+      }
+    }
+    return { ops, statusOps: [], summary: `${move.name} (area): ${parts.join(', ') || 'no targets'}`, detail: { area: true } };
+  }
+
+  // Single-target, enemy-facing: damage / stun / bleed — all gated on a hit roll.
+  if (!targetId || !entities.get(targetId)) {
+    return { ops: [], statusOps: [], summary: `${move.name}: no target`, detail: { hit: false } };
+  }
+  const h = hitRoll(entities, targetId, rng, mods);
+  const shown = h.roll == null ? 'auto' : `d6(${h.roll})`;
+  if (!h.hit) {
+    return { ops: [], statusOps: [], summary: `${move.name}: ${shown} vs Armor ${h.armor} → MISS`, detail: { hit: false } };
+  }
+
+  if (type === 'stun') {
+    const remaining = move.duration || 1;
+    const kind = move.status || 'stun';
+    return { ops: [], statusOps: [{ op: 'applyStatus', id: targetId, kind, remaining, source: actorId }], summary: `${move.name}: ${shown} vs Armor ${h.armor} → HIT, ${kind} ${remaining}`, detail: { hit: true } };
+  }
+  if (type === 'bleed') {
+    const remaining = move.duration || 2;
+    const magnitude = move.magnitude || 2;
+    return { ops: [], statusOps: [{ op: 'applyStatus', id: targetId, kind: 'bleed', magnitude, remaining, source: actorId }], summary: `${move.name}: ${shown} vs Armor ${h.armor} → HIT, bleed ${magnitude}/turn`, detail: { hit: true } };
+  }
+
+  // default: plain damage
+  const dmg = rollDamage(move, level, rng, mods);
+  return { ops: [{ op: 'damage', id: targetId, amount: dmg }], statusOps: [], summary: `${move.name}: ${shown} vs Armor ${h.armor} → HIT (${dmg} damage)`, detail: { hit: true, damage: dmg } };
 }
 
 export const combat = {
   // No initiative roll in Necrotopia — the GM declares order (party acts, then foes).
   initiativeMode: 'fixed',
   resolveAttack: necroResolveAttack,
+  resolveMove: necroResolveMove,
   flavor: {
     begin: 'No more talk — weapons up. The apocalypse does not wait.',
     victory: 'The last of them comes apart in a wet heap. The ringing fades; you are still standing, somehow.',

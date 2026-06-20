@@ -137,16 +137,16 @@ export class NetClient {
   }
 
   /**
-   * Send an action op.
+   * Send an action op. C1: optional structured combat fields (declared Move + target).
    * @param {string} text
+   * @param {string} [move] — exact Move name from the actor's moves.list
+   * @param {string} [target] — target entity id
    */
-  sendAction(text) {
-    this.sendOps([{
-      op: 'action',
-      text,
-      by: this.who,
-      mode: 'narration',
-    }]);
+  sendAction(text, move, target) {
+    const op = { op: 'action', text, by: this.who, mode: 'narration' };
+    if (move) op.move = move;
+    if (target) op.target = target;
+    this.sendOps([op]);
   }
 
   _scheduleReconnect() {

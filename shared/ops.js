@@ -49,6 +49,8 @@ const actionSchema = z.object({
   text: z.string(),
   by: z.string().optional(),
   mode: z.string().optional(),
+  move: z.string().optional(),    // C1: declared Move name from the actor's moves.list
+  target: z.string().optional(),  // C1: target entity id
 });
 
 const rollSchema = z.object({
@@ -119,11 +121,26 @@ const setFlagSchema = z.object({
   id: z.string().optional(),
 });
 
+const applyStatusSchema = z.object({
+  op: z.literal('applyStatus'),
+  id: z.string(),
+  kind: z.string(),
+  magnitude: z.number().optional(),
+  remaining: z.number(),
+  source: z.string().optional(),
+});
+
+const removeStatusSchema = z.object({
+  op: z.literal('removeStatus'),
+  id: z.string(),
+  kind: z.string(),
+});
+
 export const opUnion = z.discriminatedUnion('op', [
   spawnSchema, setSchema, mergeSchema, despawnSchema,
   eventSchema, actionSchema, rollSchema, resetSchema,
   damageSchema, healSchema, giveItemSchema, takeItemSchema, moveSchema, setFlagSchema,
-  takeSchema, dropSchema,
+  takeSchema, dropSchema, applyStatusSchema, removeStatusSchema,
 ]);
 
 const batchSchema = z.array(opUnion);

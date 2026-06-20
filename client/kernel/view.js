@@ -698,10 +698,83 @@ export class View {
         ]),
       ]);
 
+      // C1: active status chips (bleed/stun/rage/…).
+      const statuses = (comps.statuses && comps.statuses.list) || [];
+      if (statuses.length) {
+        row.appendChild(el('div', { className: 'flex gap-1 ml-1 shrink-0' },
+          statuses.map(s => el('span', {
+            className: 'text-[10px] px-1 rounded bg-purple-900/40 text-purple-300 border border-purple-700/40',
+            title: `${s.kind}${s.magnitude != null ? ` ×${s.magnitude}` : ''}${s.remaining ? ` (${s.remaining} left)` : ''}`,
+          }, [`${s.kind}${s.remaining ? ` ${s.remaining}` : ''}`]))));
+      }
+
       orderContainer.appendChild(row);
     }
 
     this.sceneAreaEl.appendChild(orderContainer);
+
+    // C1: when it's the PC's turn, render the Move menu + target picker.
+    const pcPair = this._findPc();
+    if (pcPair) {
+      const [pcId, pc] = pcPair;
+      const moves = (pc.moves && pc.moves.list) || [];
+      if (order[turnIndex] === pcId && moves.length) {
+        this.sceneAreaEl.appendChild(this._renderMoveMenu(pcId, moves, enc));
+      } else {
+        this._selectedMove = null;
+      }
+    }
+  }
+
+  /**
+   * C1 Move menu: render the PC's Moves as buttons. Self-target Moves (heal/buff/
+   * utility) fire immediately; offensive Moves arm a target picker over living enemies.
+   */
+  _renderMoveMenu(pcId, moves, enc) {
+    const SELF_TYPES = new Set(['heal', 'buff', 'utility']);
+    const wrap = el('div', { className: 'mt-3 border-t border-gray-700 pt-2' });
+    wrap.appendChild(el('div', { className: 'text-[10px] uppercase tracking-wider text-gray-500 mb-1' }, ['Your move']));
+
+    const btns = el('div', { className: 'flex flex-wrap gap-1' });
+    for (const m of moves) {
+      btns.appendChild(el('button', {
+        className: 'text-xs px-2 py-1 rounded bg-gray-700 hover:bg-gray-600 text-gray-200 '
+          + (this._selectedMove === m.name ? 'ring-1 ring-yellow-500' : ''),
+        title: m.special || m.type || '',
+        onclick: () => {
+          if (SELF_TYPES.has(m.type)) {
+            this._selectedMove = null;
+            this._send(`I use ${m.name}`, m.name);
+          } else {
+            this._selectedMove = m.name;
+            this._refreshScoped();
+          }
+        },
+      }, [m.name]));
+    }
+    wrap.appendChild(btns);
+
+    if (this._selectedMove) {
+      const living = (enc.enemies || []).filter(id => {
+        const c = this.store.entities.get(id);
+        return c && (c.status || {}).alive !== false;
+      });
+      wrap.appendChild(el('div', { className: 'text-[10px] uppercase tracking-wider text-gray-500 mt-2 mb-1' }, [`Target for ${this._selectedMove}`]));
+      const tg = el('div', { className: 'flex flex-wrap gap-1' });
+      for (const id of living) {
+        const name = ((this.store.entities.get(id) || {}).identity || {}).name || id;
+        tg.appendChild(el('button', {
+          className: 'text-xs px-2 py-1 rounded bg-red-900/50 hover:bg-red-800 text-red-200',
+          onclick: () => {
+            const mv = this._selectedMove;
+            this._selectedMove = null;
+            this._send(`I use ${mv} on ${name}`, mv, id);
+          },
+        }, [name]));
+      }
+      wrap.appendChild(tg);
+    }
+    return wrap;
   }
 
   // ---- Scoped player view (You / Here / Quests) ----
@@ -733,9 +806,9 @@ export class View {
     return out;
   }
 
-  /** Send a player action (set by main.js → net.sendAction). */
-  _send(text) {
-    if (typeof this.onAction === 'function') this.onAction(text);
+  /** Send a player action (set by main.js → net.sendAction). C1: optional move/target. */
+  _send(text, move, target) {
+    if (typeof this.onAction === 'function') this.onAction(text, move, target);
   }
 
   /** A clickable HUD row that dispatches an action when clicked. */

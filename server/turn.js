@@ -134,7 +134,7 @@ export function createTurnEngine({ session, broadcast, applyAndBroadcast, dmAgen
       // 2.7 Combat initiation (no LLM): attacking a present HOSTILE starts a structured
       //     encounter. Attacking a non-hostile NPC falls through to the narrative path.
       if (combat) {
-        const initiation = combat.detectInitiation(actionText);
+        const initiation = combat.detectInitiation(actionOp);
         if (initiation) {
           await combat.startAndResolve(actionOp, initiation);
           return;

@@ -16,9 +16,10 @@
  */
 
 import {
-  buildEncounter, currentCombatant, resolveAttack, advanceTurn, outcome,
+  buildEncounter, currentCombatant, resolveAttack, resolveMove, advanceTurn, outcome,
 } from '../shared/combat.js';
-import { expandOp } from '../shared/effects.js';
+import { expandOp, expandOps } from '../shared/effects.js';
+import { tickStatuses } from '../shared/statuses.js';
 import { findPc, pcLocationId, entitiesAt } from '../shared/space.js';
 
 const ATTACK_RE = /\b(attack|attacks?|hit|strike|stab|slash|swing|fight|kill|charge|shoot|punch|lunge|cut down|draw (?:my )?(?:sword|blade|steel|weapon))\b/i;
@@ -104,6 +105,91 @@ export function createCombatEngine({ session, broadcast, applyAndBroadcast, awar
     }
   }
 
+  /** Broadcast a Move/roll line (C1 — same lane as attack rolls). */
+  function moveLine(actorId, targetId, result) {
+    const arrow = targetId && targetId !== actorId ? ` → ${nameOf(targetId)}` : '';
+    applyAndBroadcast([{
+      op: 'event', name: 'system',
+      data: {
+        kind: 'roll',
+        text: `✦ ${nameOf(actorId)}${arrow}: ${result.summary}`,
+        detail: { ...(result.detail || {}) },
+      },
+    }], 'combat');
+  }
+
+  /** Broadcast a status applied/ticked/expired line (C1). */
+  function statusEvent(text, detail) {
+    applyAndBroadcast([{ op: 'event', name: 'system', data: { kind: 'status', text, detail } }], 'combat');
+  }
+
+  /** Find a Move by name on an actor's moves.list (exact, then case-insensitive). */
+  function findMove(actorId, name) {
+    if (!name) return null;
+    const list = ((session.entities.get(actorId) || {}).moves || {}).list || [];
+    return list.find(m => m.name === name)
+      || list.find(m => (m.name || '').toLowerCase() === name.toLowerCase())
+      || null;
+  }
+
+  /** Apply a batch of (possibly semantic) ops via the expander. */
+  function applyOps(ops) {
+    if (!ops || !ops.length) return;
+    const expanded = expandOps(session.entities, ops);
+    if (expanded.length) applyAndBroadcast(expanded, 'combat');
+  }
+
+  /**
+   * Resolve + apply a declared Move: choose a sensible target, broadcast the roll,
+   * apply damage/heal ops and status ops (with status lines), announce kills.
+   */
+  function doMove(actorId, move, requestedTarget, text) {
+    const enc = getEncounter();
+    const type = move.type || 'damage';
+    let targetId = requestedTarget;
+
+    if (type === 'heal' || type === 'buff' || type === 'utility') {
+      targetId = requestedTarget || actorId;            // self by default
+    } else if (type !== 'area') {
+      if (!targetId || !isAlive(targetId)) targetId = pickTarget(text, enc.enemies || []);
+    }
+
+    const result = resolveMove(move, { actorId, targetId }, session.entities, session.rng(), combatRules);
+
+    moveLine(actorId, targetId, result);
+    applyOps(result.ops || []);
+
+    for (const sop of (result.statusOps || [])) {
+      applyOps([sop]);
+      statusEvent(
+        `${nameOf(sop.id)} gains ${sop.kind}${sop.remaining ? ` (${sop.remaining})` : ''}`,
+        { target: sop.id, kind: sop.kind, magnitude: sop.magnitude, remaining: sop.remaining },
+      );
+    }
+
+    // Announce any combatant that the move's damage just dropped.
+    for (const o of (result.ops || [])) {
+      if (o.op === 'damage' && o.id && !isAlive(o.id)) banner('turn', `${nameOf(o.id)} falls!`);
+    }
+  }
+
+  /**
+   * Tick a combatant's statuses at the start of their turn: bleed bites, expired
+   * statuses drop, and a `skip` (stun) is reported. No-op (no roll consumed) when
+   * the combatant carries no statuses — so 5e/DSA fights are unaffected.
+   * @returns {boolean} skip — true if this combatant loses their turn (stun)
+   */
+  function tickAndApply(combatantId) {
+    const comps = session.entities.get(combatantId);
+    const list = (comps && comps.statuses && comps.statuses.list) || [];
+    if (!list.length) return false;
+
+    const { ops, skip, lines } = tickStatuses(session.entities, combatantId, session.rng());
+    applyOps(ops);
+    for (const ln of lines) statusEvent(ln.text, ln.detail);
+    return skip;
+  }
+
   // ---- target selection ----
 
   /** Present, living, hostile NPCs at the PC's location. */
@@ -138,20 +224,39 @@ export function createCombatEngine({ session, broadcast, applyAndBroadcast, awar
       const enc = getEncounter();
       if (!enc || !enc.active) return;
 
-      const result = outcome(enc, session.entities);
-      if (result !== 'ongoing') { endEncounter(result); return; }
+      if (outcome(enc, session.entities) !== 'ongoing') { endEncounter(outcome(enc, session.entities)); return; }
 
       const cur = currentCombatant(enc);
       if (!cur) return;
 
-      // Player-controlled seat → stop and wait for their action op.
-      if (cur === pcId()) return;
-
-      // Enemy seat: attack a living ally (the PC for now) if this enemy is alive.
+      // Start-of-turn status tick (bleed bites; stun flags a skip). Only if alive.
+      let skip = false;
       if (isAlive(cur)) {
-        const target = enc.allies.find(isAlive);
-        if (target) doAttack(cur, target);
+        skip = tickAndApply(cur);
+        // A bleed tick can drop a combatant (incl. the current one) → re-check outcome.
+        if (outcome(getEncounter(), session.entities) !== 'ongoing') { endEncounter(outcome(getEncounter(), session.entities)); return; }
       }
+
+      // Player-controlled seat: a stunned/dead PC loses the turn; otherwise wait for input.
+      if (cur === pcId()) {
+        if (!isAlive(cur)) { writeEncounter(advanceTurn(getEncounter(), session.entities)); continue; }
+        if (skip) {
+          banner('turn', `${nameOf(cur)} is stunned and loses the turn!`);
+          writeEncounter(advanceTurn(getEncounter(), session.entities));
+          continue;
+        }
+        return; // the player acts
+      }
+
+      // Enemy seat: act (basic attack in C1) unless stunned/dead.
+      if (isAlive(cur) && !skip) {
+        const target = (getEncounter().allies || []).find(isAlive);
+        if (target) doAttack(cur, target);
+      } else if (isAlive(cur) && skip) {
+        banner('turn', `${nameOf(cur)} is stunned and can't act!`);
+      }
+
+      if (outcome(getEncounter(), session.entities) !== 'ongoing') { endEncounter(outcome(getEncounter(), session.entities)); return; }
       // Advance to the next living combatant (skips the dead, bumps the round on wrap).
       writeEncounter(advanceTurn(getEncounter(), session.entities));
     }
@@ -197,15 +302,22 @@ export function createCombatEngine({ session, broadcast, applyAndBroadcast, awar
 
   /**
    * Should this action START a structured encounter?
-   * Returns {targetId, enemies, allies} when the player attacks a present hostile, else null.
+   * Triggers when the text reads like an attack OR a declared Move names a present
+   * hostile as its target (the HUD move→enemy flow). Returns {targetId, enemies, allies} or null.
+   * @param {object|string} actionOp — the player action op (or bare text, back-compat)
    */
-  function detectInitiation(actionText) {
-    if (!ATTACK_RE.test(actionText)) return null;
+  function detectInitiation(actionOp) {
+    const actionText = typeof actionOp === 'string' ? actionOp : (actionOp.text || '');
+    const reqTarget = (typeof actionOp === 'object' && actionOp.target) || null;
     const enemies = presentHostiles();
     if (enemies.length === 0) return null;
     const pc = pcId();
     if (!pc) return null;
-    const targetId = pickTarget(actionText, enemies) || enemies[0];
+
+    const targetIsHostile = reqTarget && enemies.includes(reqTarget);
+    if (!ATTACK_RE.test(actionText) && !targetIsHostile) return null;
+
+    const targetId = targetIsHostile ? reqTarget : (pickTarget(actionText, enemies) || enemies[0]);
     return { targetId, enemies, allies: [pc] };
   }
 
@@ -234,18 +346,34 @@ export function createCombatEngine({ session, broadcast, applyAndBroadcast, awar
     const text = (actionOp.text || '').trim();
     if (!inCombat()) return;
 
-    if (FLEE_RE.test(text) && !ATTACK_RE.test(text)) {
+    // Flee (only when it isn't also a declared Move / attack).
+    if (FLEE_RE.test(text) && !ATTACK_RE.test(text) && !actionOp.move) {
       endEncounter('flee');
       return;
     }
 
-    const enc = getEncounter();
-    const target = pickTarget(text, enc.enemies);
     const pc = pcId();
-    if (target && pc) {
-      doAttack(pc, target);
-    } else {
-      banner('turn', 'There is no enemy left to strike.');
+    let acted = false;
+
+    // C1: a declared Move on the actor's moves.list resolves via combat.resolveMove.
+    if (pc && actionOp.move) {
+      const move = findMove(pc, actionOp.move);
+      if (move) {
+        doMove(pc, move, actionOp.target, text);
+        acted = true;
+      }
+    }
+
+    // Fallback: text/ATTACK_RE basic attack (back-compat; nothing breaks).
+    if (!acted) {
+      const target = (actionOp.target && isAlive(actionOp.target))
+        ? actionOp.target
+        : pickTarget(text, getEncounter().enemies);
+      if (target && pc) {
+        doAttack(pc, target);
+      } else {
+        banner('turn', 'There is no enemy left to strike.');
+      }
     }
 
     if (outcome(getEncounter(), session.entities) !== 'ongoing') {

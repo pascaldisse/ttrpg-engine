@@ -12,6 +12,7 @@ import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { registerComponents } from '../shared/schema.js';
 import { registerChecks } from '../shared/checks.js';
+import { registerStatuses } from '../shared/statuses.js';
 
 /**
  * Load a ruleset bundle by id from the world directory.
@@ -44,6 +45,7 @@ export async function loadRuleset(id, worldDir) {
 
   registerComponents(mod.components || {});
   registerChecks(mod.checks || {});
+  registerStatuses(mod.statuses || {});
 
   let systemPrompt = '';
   try {
@@ -57,6 +59,7 @@ export async function loadRuleset(id, worldDir) {
     systemPrompt,
     components: mod.components || {},
     checks: mod.checks || {},
+    statuses: mod.statuses || {},
     combat: mod.combat || null,
   };
 }

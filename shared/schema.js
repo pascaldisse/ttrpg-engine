@@ -87,6 +87,15 @@ export const SCHEMA = {
       conditions: { doc: 'Active conditions (e.g. prone, poisoned, invisible).' },
     },
   },
+  statuses: {
+    doc: 'Mechanical status-effect engine (C1). DISTINCT from the narrative `status` {alive,conditions} component. Each entry ticks/bites per the ruleset\'s STATUS_DEFS (shared/statuses.js).',
+    default: { list: [] },
+    fields: {
+      list: {
+        doc: 'Array of { kind, magnitude?, remaining, source? }. kind = a status id from the ruleset STATUS_DEFS (bleed/stun/rage/…); magnitude = strength; remaining = turns/ticks left (0 ⇒ expire); source = who applied it.',
+      },
+    },
+  },
   flags: {
     doc: 'Arbitrary canon key→value store. Use for world-state gates, story flags, any extensible data.',
     default: {},
