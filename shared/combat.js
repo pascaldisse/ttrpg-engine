@@ -20,7 +20,7 @@
  */
 
 import { resolveCheck, abilityMod } from './checks.js';
-import { aggregateModifiers, speedMultiplier } from './statuses.js';
+import { aggregateModifiers, speedMultiplier, STATUS_DEFS } from './statuses.js';
 
 // ---- Helpers ----
 
@@ -498,6 +498,53 @@ export function decisionToOps(actorId, intent) {
     ],
     leaves: true,
   };
+}
+
+// ---- Zones & hazards (C4) ----
+
+/** The zone a combatant occupies (default the implicit 'field'). */
+export function zoneOf(entities, id) {
+  const e = entities.get ? entities.get(id) : entities[id];
+  return ((e && e.position) || {}).zoneId || 'field';
+}
+
+/** Does an encounter zone carry a tag (e.g. 'ledge', 'raised')? PURE. */
+export function zoneHasTag(encounter, zoneId, tag) {
+  const z = (encounter.zones || []).find(zz => zz.id === zoneId);
+  return !!(z && Array.isArray(z.tags) && z.tags.includes(tag));
+}
+
+/**
+ * Is a Move in range from actor to target given their zones? PURE.
+ *   self/any → always; melee → same zone; ranged/area → any zone.
+ * Range is read from move.range, defaulted by move.type.
+ */
+export function inRange(move, actorId, targetId, entities) {
+  const range = move.range || (move.type === 'area' ? 'area' : (move.type === 'heal' || move.type === 'buff' || move.type === 'utility') ? 'self' : 'melee');
+  if (range === 'self' || range === 'any' || range === 'ranged' || range === 'area') return true;
+  // melee: must share a zone
+  return zoneOf(entities, actorId) === zoneOf(entities, targetId);
+}
+
+/**
+ * Hazard ticks for one combatant at turn start: every hazard in their zone whose kind
+ * has an onTick (e.g. fire) damages them. PURE — returns ops + hit descriptors.
+ * @returns {{ops:object[], hits:{kind:string, zoneId:string, magnitude:number}[]}}
+ */
+export function hazardOps(encounter, combatantId, entities) {
+  const zone = zoneOf(entities, combatantId);
+  const ops = [];
+  const hits = [];
+  for (const h of (encounter.hazards || [])) {
+    if (h.zoneId !== zone) continue;
+    const def = STATUS_DEFS[h.kind];
+    if (def && typeof def.onTick === 'function') {
+      const res = def.onTick({ id: combatantId }, h) || {};
+      if (Array.isArray(res.ops)) ops.push(...res.ops);
+      hits.push({ kind: h.kind, zoneId: h.zoneId, magnitude: h.magnitude });
+    }
+  }
+  return { ops, hits };
 }
 
 /**

@@ -7,6 +7,12 @@
       ]
     },
     "status": { "alive": true, "conditions": [] },
+    "flags": { "combatZones": [
+      { "id": "the-aisle", "label": "The Aisle", "tags": [] },
+      { "id": "the-altar", "label": "The Altar", "tags": ["raised"] },
+      { "id": "the-doorway", "label": "The Doorway", "tags": [] },
+      { "id": "the-balcony-edge", "label": "The Balcony Edge", "tags": ["ledge"] }
+    ] },
     "art": { "prompt": "A tacky neon Las Vegas wedding chapel interior at night during an apocalypse, heart-shaped neon arch, overturned pews, red sky through stained glass, B-movie horror, oil painting style", "image": null }
   },
 
@@ -20,6 +26,7 @@
     ]},
     "status": { "alive": true, "conditions": [] },
     "place": { "locationId": "loc-chapel", "connections": [] },
+    "position": { "zoneId": "the-aisle" },
     "inventory": { "items": [ { "id": "item-katana", "name": "Katana", "qty": 1 } ] },
     "flags": { "damage": "1d6" }
   },
@@ -64,6 +71,7 @@
     "status": { "alive": true, "conditions": [] },
     "place": { "locationId": "loc-chapel", "connections": [] },
     "moves": { "list": [ { "name": "Claw", "type": "damage", "damage": "1d3", "cost": 1, "special": "Rake with filthy claws." } ] },
+    "position": { "zoneId": "the-aisle" },
     "flags": { "hostile": true, "damage": "1d3" }
   },
   "npc-imp-2": {
@@ -78,6 +86,7 @@
     "status": { "alive": true, "conditions": [] },
     "place": { "locationId": "loc-chapel", "connections": [] },
     "moves": { "list": [ { "name": "Claw", "type": "damage", "damage": "1d3", "cost": 1, "special": "Rake with filthy claws." } ] },
+    "position": { "zoneId": "the-aisle" },
     "flags": { "hostile": true, "damage": "1d3" }
   },
   "npc-imp-3": {
@@ -92,6 +101,7 @@
     "status": { "alive": true, "conditions": [] },
     "place": { "locationId": "loc-chapel", "connections": [] },
     "moves": { "list": [ { "name": "Claw", "type": "damage", "damage": "1d3", "cost": 1, "special": "Rake with filthy claws." } ] },
+    "position": { "zoneId": "the-aisle" },
     "flags": { "hostile": true, "damage": "1d3" }
   },
   "npc-imp-4": {
@@ -106,6 +116,7 @@
     "status": { "alive": true, "conditions": [] },
     "place": { "locationId": "loc-chapel", "connections": [] },
     "moves": { "list": [ { "name": "Claw", "type": "damage", "damage": "1d3", "cost": 1, "special": "Rake with filthy claws." } ] },
+    "position": { "zoneId": "the-aisle" },
     "flags": { "hostile": true, "damage": "1d3" }
   },
 

@@ -722,6 +722,12 @@ export class View {
 
     this.sceneAreaEl.appendChild(orderContainer);
 
+    // C4: zone lanes (combatant chips + hazard markers + a "move here" affordance).
+    const pcForZones = this._findPc();
+    if ((enc.zones || []).length && pcForZones) {
+      this.sceneAreaEl.appendChild(this._renderZones(enc, pcForZones[0], currentId));
+    }
+
     // C1: when it's the PC's turn, render the Move menu + target picker.
     const pcPair = this._findPc();
     if (pcPair) {
@@ -757,6 +763,57 @@ export class View {
       }, [`${name.split(' ').slice(-1)[0]} ${hp}`]));
     });
     return bar;
+  }
+
+  /**
+   * C4 zone lanes: each authored zone as a labeled lane with the combatants standing
+   * in it, hazard markers, and a "move here" button when the PC is elsewhere.
+   */
+  _renderZones(enc, pcId, currentId) {
+    const zones = enc.zones || [];
+    const enemies = new Set(enc.enemies || []);
+    const combatants = [...(enc.allies || []), ...(enc.enemies || [])];
+    const hazardsByZone = {};
+    for (const h of (enc.hazards || [])) (hazardsByZone[h.zoneId] = hazardsByZone[h.zoneId] || []).push(h);
+    const pcZone = ((this.store.entities.get(pcId) || {}).position || {}).zoneId || 'field';
+
+    const wrap = el('div', { className: 'mt-3 grid grid-cols-2 gap-2' });
+    for (const z of zones) {
+      const here = combatants.filter(id => {
+        const c = this.store.entities.get(id);
+        return c && ((c.position || {}).zoneId || 'field') === z.id && (c.status || {}).alive !== false;
+      });
+      const haz = hazardsByZone[z.id] || [];
+      const isPcHere = pcZone === z.id;
+
+      const lane = el('div', {
+        className: 'p-2 rounded border ' + (isPcHere ? 'border-yellow-700 bg-gray-800' : 'border-gray-700 bg-gray-800/40'),
+      });
+      lane.appendChild(el('div', { className: 'flex items-center justify-between mb-1' }, [
+        el('span', { className: 'text-xs font-semibold text-gray-300' }, [z.label + ((z.tags || []).length ? ` [${z.tags.join(',')}]` : '')]),
+        isPcHere ? el('span', { className: 'text-[10px] text-yellow-500' }, ['you are here'])
+          : el('button', {
+            className: 'text-[10px] px-1.5 py-0.5 bg-gray-700 hover:bg-gray-600 rounded text-emerald-300',
+            onclick: () => this._send(`I move to ${z.label}`, undefined, undefined, z.id),
+          }, ['move here']),
+      ]));
+      if (haz.length) {
+        lane.appendChild(el('div', { className: 'text-[10px] text-orange-400 mb-1' }, ['🔥 ' + haz.map(h => `${h.kind}${h.remaining ? ` (${h.remaining})` : ''}`).join(', ')]));
+      }
+      if (here.length) {
+        for (const id of here) {
+          const c = this.store.entities.get(id);
+          const nm = (c.identity || {}).name || id;
+          lane.appendChild(el('div', {
+            className: `text-xs ${enemies.has(id) ? 'text-red-300' : 'text-blue-300'} ${id === currentId ? 'font-bold' : ''}`,
+          }, [(id === currentId ? '▶ ' : '') + nm]));
+        }
+      } else {
+        lane.appendChild(el('div', { className: 'text-[10px] text-gray-600 italic' }, ['(empty)']));
+      }
+      wrap.appendChild(lane);
+    }
+    return wrap;
   }
 
   /**
@@ -839,9 +896,9 @@ export class View {
     return out;
   }
 
-  /** Send a player action (set by main.js → net.sendAction). C1: optional move/target. */
-  _send(text, move, target) {
-    if (typeof this.onAction === 'function') this.onAction(text, move, target);
+  /** Send a player action (set by main.js → net.sendAction). C1: move/target; C4: zone. */
+  _send(text, move, target, zone) {
+    if (typeof this.onAction === 'function') this.onAction(text, move, target, zone);
   }
 
   /** A clickable HUD row that dispatches an action when clicked. */

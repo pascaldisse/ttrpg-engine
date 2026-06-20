@@ -18,6 +18,7 @@
 import {
   buildEncounter, currentCombatant, resolveAttack, resolveMove, advanceTurn, outcome,
   buildTimeline, advanceTimeline, projectQueue, enemyInstinct, moraleShaken, decisionToOps,
+  hazardOps, zoneOf, zoneHasTag,
 } from '../shared/combat.js';
 import { expandOp, expandOps } from '../shared/effects.js';
 import { tickStatuses } from '../shared/statuses.js';
@@ -102,9 +103,13 @@ export function createCombatEngine({ session, broadcast, applyAndBroadcast, awar
   /** Advance the floor after `actorId` acted (timeline charges Move cost; legacy bumps turnIndex). */
   function advanceAfter(actorId, move) {
     const enc = getEncounter();
-    const next = isTimeline()
+    let next = isTimeline()
       ? advanceTimeline(enc, actorId, actionCostOf(move), session.entities, combatRules)
       : advanceTurn(enc, session.entities);
+    // C4: hazards burn down once per round; drop expired surfaces.
+    if ((next.hazards || []).length && (next.round || 0) > (enc.round || 0)) {
+      next = { ...next, hazards: next.hazards.map(h => ({ ...h, remaining: (h.remaining ?? 1) - 1 })).filter(h => h.remaining > 0) };
+    }
     writeEncounter(next);
     if (isTimeline()) broadcastTimeline();
   }
@@ -212,13 +217,25 @@ export function createCombatEngine({ session, broadcast, applyAndBroadcast, awar
    * @returns {boolean} skip — true if this combatant loses their turn (stun)
    */
   function tickAndApply(combatantId) {
+    let skip = false;
     const comps = session.entities.get(combatantId);
     const list = (comps && comps.statuses && comps.statuses.list) || [];
-    if (!list.length) return false;
+    if (list.length) {
+      const r = tickStatuses(session.entities, combatantId, session.rng());
+      applyOps(r.ops);
+      for (const ln of r.lines) statusEvent(ln.text, ln.detail);
+      skip = r.skip;
+    }
 
-    const { ops, skip, lines } = tickStatuses(session.entities, combatantId, session.rng());
-    applyOps(ops);
-    for (const ln of lines) statusEvent(ln.text, ln.detail);
+    // C4: hazard surfaces in the combatant's zone bite at turn start (fire/etc.).
+    const enc = getEncounter();
+    if (enc && (enc.hazards || []).length) {
+      const { ops, hits } = hazardOps(enc, combatantId, session.entities);
+      if (ops.length) applyOps(ops);
+      for (const h of hits) {
+        statusEvent(`${nameOf(combatantId)} is caught in the ${h.kind}!`, { target: combatantId, kind: h.kind, zoneId: h.zoneId, magnitude: h.magnitude });
+      }
+    }
     return skip;
   }
 
@@ -352,9 +369,19 @@ export function createCombatEngine({ session, broadcast, applyAndBroadcast, awar
     }
 
     if (success && (ruling.ops || []).length) {
-      applyOps(ruling.ops);
-      for (const o of ruling.ops) {
+      // C4: a shove that lands in a zone tagged 'ledge' is lethal — exploit the board.
+      const enc2 = getEncounter();
+      const ops = ruling.ops.map(o => {
+        if (o.op === 'damage' && o.id && zoneHasTag(enc2, zoneOf(session.entities, o.id), 'ledge')) {
+          const maxHp = ((session.entities.get(o.id) || {}).stats || {}).maxHp || 999;
+          return { ...o, amount: Math.max(o.amount || 0, maxHp) };
+        }
+        return o;
+      });
+      applyOps(ops);
+      for (const o of ops) {
         if (o.op === 'applyStatus') statusEvent(`${nameOf(o.id)} gains ${o.kind}${o.remaining ? ` (${o.remaining})` : ''}`, { target: o.id, kind: o.kind, remaining: o.remaining });
+        if (o.op === 'spawnHazard') applyAndBroadcast([{ op: 'event', name: 'system', data: { kind: 'hazard', text: `A ${o.kind} erupts across the zone!`, detail: { zoneId: o.zoneId, kind: o.kind, magnitude: o.magnitude, remaining: o.remaining } } }], 'combat');
         if (o.op === 'damage' && o.id && !isAlive(o.id)) banner('turn', `${nameOf(o.id)} falls!`);
       }
     } else if (!success) {
@@ -500,6 +527,21 @@ export function createCombatEngine({ session, broadcast, applyAndBroadcast, awar
     const enc = isTimeline()
       ? buildTimeline({ allies: initiation.allies, enemies: initiation.enemies }, session.entities, combatRules)
       : buildEncounter({ allies: initiation.allies, enemies: initiation.enemies }, session.entities, session.rng(), combatRules);
+
+    // C4: attach authored combat zones from the PC's location (flags.combatZones); a
+    // scene with none ⇒ a single implicit 'field' zone. Place any unpositioned combatant.
+    const here = pcLocationId(session.entities);
+    const loc = here ? session.entities.get(here) : null;
+    const zones = (loc && loc.flags && loc.flags.combatZones) || [];
+    enc.zones = zones;
+    enc.hazards = [];
+    if (zones.length) {
+      for (const id of [...initiation.allies, ...initiation.enemies]) {
+        const c = session.entities.get(id);
+        if (!c || (c.position && c.position.zoneId)) continue;
+        applyAndBroadcast([{ op: 'merge', id, component: 'position', value: { zoneId: zones[0].id } }], 'combat');
+      }
+    }
     writeEncounter(enc);
 
     const orderSeq = isTimeline() ? enc.queue : enc.order;
@@ -529,6 +571,22 @@ export function createCombatEngine({ session, broadcast, applyAndBroadcast, awar
     }
 
     const pc = pcId();
+
+    // C4: move within combat to another zone (consumes the turn).
+    if (pc && actionOp.zone) {
+      const enc = getEncounter();
+      const zone = (enc.zones || []).find(z => z.id === actionOp.zone || z.label === actionOp.zone);
+      if (zone) {
+        applyOps([{ op: 'moveZone', id: pc, zoneId: zone.id }]);
+        banner('turn', `${nameOf(pc)} moves to ${zone.label}.`);
+        if (outcome(getEncounter(), session.entities) === 'ongoing') {
+          advanceAfter(pc, { cost: 1 });
+          await runUntilPlayerTurn();
+        }
+        return;
+      }
+    }
+
     let acted = false;
     let usedMove = null;
 

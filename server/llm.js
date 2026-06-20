@@ -253,15 +253,25 @@ export class MockLlmClient {
       return this.#mockCanonize(actionText);
     }
 
-    // ---- C3: improvised combat action → check + status/ops ----
+    // ---- C3/C4: improvised combat action → check + status/hazard/board-exploit ----
     if (opts.role === 'combat-adjudicate') {
       const txt = (actionText || '').toLowerCase();
-      const idm = JSON.stringify(messages).match(/npc-[a-z0-9-]+/);
-      const target = idm ? idm[0] : 'npc-imp-1';
+      const sys = JSON.stringify(messages);
+      const target = (sys.match(/npc-[a-z0-9-]+/) || ['npc-imp-1'])[0];
+      // zone of the first enemy: "npc-...@<zone>"
+      const zone = (sys.match(/npc-[a-z0-9-]+@([a-z0-9-]+)/) || [])[1] || 'field';
+      // C4: set a surface alight ("kick the brazier into the oil")
+      if (/brazier|oil|fire|torch|ignite|flame|burn/.test(txt)) {
+        return this.#jsonResult({ checks: [{ check: 'necro-test', dc: 1, reason: 'kicking the brazier into the oil' }], ops: [{ op: 'spawnHazard', zoneId: zone, kind: 'fire', magnitude: 3, remaining: 3 }] });
+      }
+      // C4: exploit the board ("shove it off the balcony edge") — lethal on a ledge
+      if (/shove|push|throw .* off|balcony|ledge|edge|over the rail/.test(txt)) {
+        return this.#jsonResult({ checks: [{ check: 'necro-test', dc: 1, reason: 'shoving it off the edge' }], ops: [{ op: 'damage', id: target, amount: 6 }] });
+      }
       if (/sand|dirt|eyes|blind|grit/.test(txt)) {
         return this.#jsonResult({ checks: [{ check: 'necro-test', dc: 1, reason: 'flinging grit in its eyes' }], ops: [{ op: 'applyStatus', id: target, kind: 'blind', remaining: 2 }] });
       }
-      if (/trip|shove|knock|tackle/.test(txt)) {
+      if (/trip|knock|tackle/.test(txt)) {
         return this.#jsonResult({ checks: [{ check: 'necro-test', dc: 1, reason: 'knocking it down' }], ops: [{ op: 'applyStatus', id: target, kind: 'stun', remaining: 1 }] });
       }
       return this.#jsonResult({ checks: [], ops: [] });

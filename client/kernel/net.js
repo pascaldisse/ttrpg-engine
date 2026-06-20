@@ -142,10 +142,11 @@ export class NetClient {
    * @param {string} [move] — exact Move name from the actor's moves.list
    * @param {string} [target] — target entity id
    */
-  sendAction(text, move, target) {
+  sendAction(text, move, target, zone) {
     const op = { op: 'action', text, by: this.who, mode: 'narration' };
     if (move) op.move = move;
     if (target) op.target = target;
+    if (zone) op.zone = zone;
     this.sendOps([op]);
   }
 

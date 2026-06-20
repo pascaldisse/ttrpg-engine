@@ -129,6 +129,10 @@ export const statuses = {
   'armor-break': { doc: 'Armor break — -1 effective Armor on the bearer.', tag: 'debuff', modifyIncoming: () => ({ armorDelta: -1 }) },
   // Debuff: the bearer is blinded — its attacks are far less likely to land (improv: sand in the eyes).
   blind: { doc: 'Blind — the bearer\'s attacks suffer a steep hit penalty.', tag: 'debuff', modifyOutgoing: () => ({ hitDelta: -3 }) },
+  // C4 hazards (zone-scoped surfaces). fire burns everyone standing in the zone each turn;
+  // oil is inert until ignited (improv: fire + oil → a bigger fire).
+  fire: { doc: 'Fire — a burning surface; deals `magnitude` damage to anyone in the zone at turn start.', tag: 'dot', zoneScoped: true, onTick: (t, h) => ({ ops: [{ op: 'damage', id: t.id, amount: h.magnitude || 1 }] }) },
+  oil: { doc: 'Oil — a slick, inert surface until something sets it alight.', tag: 'dot', zoneScoped: true },
   // C2 timeline: haste doubles CTB speed (acts twice as often); slow halves it.
   haste: { doc: 'Haste — ×2 CTB speed (acts sooner / more often).', tag: 'buff', modifySpeed: (sp) => sp * 2 },
   slow: { doc: 'Slow — ×0.5 CTB speed (acts later / less often).', tag: 'debuff', modifySpeed: (sp) => sp * 0.5 },
@@ -142,12 +146,20 @@ function nameStub(entities, id) {
   return (e && e.identity && e.identity.name) || id;
 }
 
-/** Living enemies recorded on the encounter singleton (for area moves). */
-function livingEnemies(entities) {
+/** The combat zone a combatant stands in (default the implicit 'field'). */
+function zoneOf(entities, id) {
+  const e = entities.get(id);
+  return ((e && e.position) || {}).zoneId || 'field';
+}
+
+/** Living enemies recorded on the encounter singleton (optionally only in a given zone). */
+function livingEnemies(entities, zoneId) {
   const enc = (entities.get('encounter') || {}).encounter || {};
   return (enc.enemies || []).filter(id => {
     const e = entities.get(id);
-    return e && (e.status || {}).alive !== false;
+    if (!e || (e.status || {}).alive === false) return false;
+    if (zoneId != null && zoneOf(entities, id) !== zoneId) return false;
+    return true;
   });
 }
 
@@ -236,7 +248,8 @@ function necroResolveMove(move, { actorId, targetId }, entities, rng, mods = {})
   }
 
   if (type === 'area') {
-    const enemies = livingEnemies(entities);
+    // Area hits every living enemy in the ACTOR's zone (C4).
+    const enemies = livingEnemies(entities, zoneOf(entities, actorId));
     const ops = [];
     const parts = [];
     for (const tid of enemies) {
@@ -256,6 +269,13 @@ function necroResolveMove(move, { actorId, targetId }, entities, rng, mods = {})
   if (!targetId || !entities.get(targetId)) {
     return { ops: [], statusOps: [], summary: `${move.name}: no target`, detail: { hit: false } };
   }
+
+  // C4 range: a melee Move (the default) requires the actor and target to share a zone.
+  const range = move.range || 'melee';
+  if (range === 'melee' && zoneOf(entities, actorId) !== zoneOf(entities, targetId)) {
+    return { ops: [], statusOps: [], summary: `${move.name}: out of range — ${nameStub(entities, targetId)} is in another zone`, detail: { hit: false, outOfRange: true } };
+  }
+
   const h = hitRoll(entities, targetId, rng, mods);
   const shown = h.roll == null ? 'auto' : `d6(${h.roll})`;
   if (!h.hit) {

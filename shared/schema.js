@@ -96,6 +96,13 @@ export const SCHEMA = {
       },
     },
   },
+  position: {
+    doc: 'Abstract combat zone of a combatant (C4). Absent ⇒ the single implicit zone "field".',
+    default: { zoneId: 'field' },
+    fields: {
+      zoneId: { doc: 'Id of the encounter zone this combatant currently occupies.' },
+    },
+  },
   flags: {
     doc: 'Arbitrary canon key→value store. Use for world-state gates, story flags, any extensible data.',
     default: {},
@@ -151,6 +158,8 @@ export const SCHEMA = {
       participants: { doc: 'CTB timeline (C2): array of { id, time, speed, summonTurns? }. time = accumulated action cost; the actor with min time acts next.' },
       turnOf:    { doc: 'CTB timeline (C2): id of the combatant whose turn it is now.' },
       queue:     { doc: 'CTB timeline (C2): projected upcoming actor ids (the visible turn bar).' },
+      zones:     { doc: 'Abstract combat zones (C4): array of { id, label, tags? } — e.g. {id:"altar",label:"The Altar",tags:["raised"]}. Absent ⇒ a single implicit "field" zone.' },
+      hazards:   { doc: 'Improvised surfaces (C4): array of { zoneId, kind, magnitude, remaining } — statuses on a zone (fire/oil/…) that tick on combatants standing there.' },
     },
   },
   dmControl: {

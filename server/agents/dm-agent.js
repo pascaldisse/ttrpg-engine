@@ -420,8 +420,15 @@ export function createDmAgent({ session, broadcast, applyAndBroadcast, llm, rule
     const pcEntry = [...session.entities.entries()].find(([_id, c]) => (c.identity || {}).kind === 'pc');
     const pcId = pcEntry ? pcEntry[0] : 'pc-hero';
 
+    // C4 zone context: list the zones (+ tags) and where each combatant stands, so the
+    // adjudicator can place a hazard or exploit a 'ledge'.
+    const enc = (session.entities.get('encounter') || {}).encounter || {};
+    const zoneOf = (id) => ((session.entities.get(id) || {}).position || {}).zoneId || 'field';
+    const zoneList = (enc.zones || []).map(z => `${z.id}${(z.tags || []).length ? ` [${z.tags.join(',')}]` : ''}`).join(', ') || 'field';
+    const positions = [pcId, ...(enemyIds || [])].map(id => `${id}@${zoneOf(id)}`).join(', ');
+
     const messages = [
-      { role: 'system', content: `${COMBAT_ADJUDICATE_PROMPT}\n\nLiving enemies: ${(enemyIds || []).join(', ') || '(none)'}\nThe PC id is "${pcId}".` },
+      { role: 'system', content: `${COMBAT_ADJUDICATE_PROMPT}\n\nLiving enemies: ${(enemyIds || []).join(', ') || '(none)'}\nThe PC id is "${pcId}".\nZones: ${zoneList}\nPositions: ${positions}` },
       { role: 'user', content: `Improvised combat action: "${actionText}"\n\nRespond JSON ONLY: {"checks":[{check,dc,reason}], "ops":[<applyStatus/damage/spawnHazard for the SUCCESS case>]}` },
     ];
 

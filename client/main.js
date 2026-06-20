@@ -24,7 +24,7 @@ net.connect();
 
 // Let the scoped player HUD send actions (clickable NPCs / items / exits) and the
 // combat HUD send declared Moves (text + move + target).
-view.onAction = (text, move, target) => net.sendAction(text, move, target);
+view.onAction = (text, move, target, zone) => net.sendAction(text, move, target, zone);
 
 // ---- Wire action input ----
 

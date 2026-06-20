@@ -199,6 +199,30 @@ const SEMANTIC_HANDLERS = {
     return [{ op: 'merge', id: op.id, component: 'statuses', value: { list } }];
   },
 
+  /**
+   * {op:'spawnHazard', zoneId, kind, magnitude?, remaining?} → merge encounter.hazards
+   * with a new surface (fire/oil/…) on a zone. C4 improvised surfaces.
+   */
+  spawnHazard(entities, op) {
+    const enc = entities.get('encounter');
+    const cur = (enc && enc.encounter && Array.isArray(enc.encounter.hazards)) ? enc.encounter.hazards : [];
+    const hazards = [...cur, { zoneId: op.zoneId, kind: op.kind, magnitude: op.magnitude ?? 1, remaining: op.remaining ?? 2 }];
+    return [{ op: 'merge', id: 'encounter', component: 'encounter', value: { hazards } }];
+  },
+
+  /** {op:'clearHazard', zoneId, kind?} → merge encounter.hazards with matching surfaces removed. */
+  clearHazard(entities, op) {
+    const enc = entities.get('encounter');
+    const cur = (enc && enc.encounter && Array.isArray(enc.encounter.hazards)) ? enc.encounter.hazards : [];
+    const hazards = cur.filter(h => !(h.zoneId === op.zoneId && (!op.kind || h.kind === op.kind)));
+    return [{ op: 'merge', id: 'encounter', component: 'encounter', value: { hazards } }];
+  },
+
+  /** {op:'moveZone', id, zoneId} → merge position {zoneId} (move within combat). C4. */
+  moveZone(entities, op) {
+    return [{ op: 'merge', id: op.id, component: 'position', value: { zoneId: op.zoneId } }];
+  },
+
   /** {op:'setFlag', key, value, id?} → merge flags on id (default 'world-state') */
   setFlag(entities, op) {
     const targetId = op.id || 'world-state';
