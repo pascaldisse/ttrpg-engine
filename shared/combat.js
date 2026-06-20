@@ -4,9 +4,15 @@
  * PURE — no imports from server/ or client/. Takes plain data + an rng; returns plain data.
  * NEVER mutates inputs. NEVER emits ops — the server layer turns results into ops.
  *
- * EXTENSION SEAM: rulesets can swap damage/initiative rules later.
- *   - `rollInitiative` defaults to d20 + abilityMod(dex)
- *   - `resolveAttack` defaults to d20 attack roll (via resolveCheck) + weapon die damage
+ * EXTENSION SEAM (rules-as-data): a loaded ruleset bundle may export a `combat`
+ * object to override the default 5e behaviour. Both public entry points take an
+ * optional `rules` argument (the bundle's `combat` export):
+ *   - `rules.resolveAttack(params, entities, rng)` → fully replaces attack resolution.
+ *   - `rules.initiativeMode === 'fixed'` → no initiative roll; turn order is the
+ *     declared order (allies then enemies), e.g. Necrotopia's "GM announces order".
+ * When `rules` is absent, the 5e defaults below apply:
+ *   - `rollInitiative` = d20 + abilityMod(dex)
+ *   - `resolveAttack`  = d20 attack roll (via resolveCheck) + weapon die damage
  *   - Finesse detection reads `flags.finesse` on the attacker
  *   - Weapon die reads `flags.damage` (e.g. "1d8") or defaults to "1d6"
  *
@@ -102,17 +108,28 @@ export function rollInitiative(ids, entities, rng) {
  * @param {{allies:string[], enemies:string[]}} params
  * @param {Map<string,object>} entities
  * @param {{d:(s:number)=>number}} rng
+ * @param {object} [rules] — ruleset combat override. `initiativeMode:'fixed'` skips
+ *   the roll and uses the declared order (allies then enemies).
  * @returns {object} encounter component value (active, round, order, turnIndex, mode, enemies, allies)
  */
-export function buildEncounter({ allies, enemies }, entities, rng) {
+export function buildEncounter({ allies, enemies }, entities, rng, rules = {}) {
   const allIds = [...allies, ...enemies];
-  const initiative = rollInitiative(allIds, entities, rng);
+  let order;
+  let mode;
+  if (rules.initiativeMode === 'fixed') {
+    // No initiative roll — the GM declares order: the party acts, then the foes.
+    order = allIds;
+    mode = 'round-robin';
+  } else {
+    order = rollInitiative(allIds, entities, rng).map(r => r.id);
+    mode = 'initiative';
+  }
   return {
     active: true,
     round: 1,
-    order: initiative.map(r => r.id),
+    order,
     turnIndex: 0,
-    mode: 'initiative',
+    mode,
     enemies: [...enemies],
     allies: [...allies],
   };
@@ -141,9 +158,17 @@ export function currentCombatant(encounter) {
  * @param {{attackerId:string, targetId:string}} params
  * @param {Map<string,object>} entities
  * @param {{d:(s:number)=>number}} rng
+ * @param {object} [rules] — ruleset combat override. If `rules.resolveAttack` is a
+ *   function it fully replaces the 5e resolution below (same params/return shape).
  * @returns {{hit:boolean, crit:boolean, fumble:boolean, attackRoll:number, ac:number, damage:number, summary:string, ability:string, weaponDie:string}}
  */
-export function resolveAttack({ attackerId, targetId }, entities, rng) {
+export function resolveAttack({ attackerId, targetId }, entities, rng, rules = {}) {
+  // Rules-as-data seam: a ruleset may supply an entirely different attack model
+  // (e.g. Necrotopia's d6 > Armor). Delegate wholesale when present.
+  if (typeof rules.resolveAttack === 'function') {
+    return rules.resolveAttack({ attackerId, targetId }, entities, rng);
+  }
+
   const attacker = entities.get(attackerId);
   const target = entities.get(targetId);
 

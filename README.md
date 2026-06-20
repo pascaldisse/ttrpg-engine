@@ -76,6 +76,23 @@ npm run worldgen -- --theme "sunbaked frontier town" --size medium --seed 7
 Flags: `--theme`, `--size small|medium|large`, `--locations <n>`, `--seed <n>`, `--provider mock|deepseek`, `--out <path>`.
 Point `TTRPG_WORLD` at a directory containing the generated `scenes/` to play it.
 
+## Play the Necrotopia campaign
+
+A complete, playable campaign ships in `campaigns/necrotopia/` — *Necrotopia: Handbook to the
+Apocalypse* (a d6, roll-OVER-Armor system with no attributes and custom Moves). It proves the
+engine is rules-agnostic a **third** way (5e = d20-vs-DC, DSA5 = 3d20 roll-under, Necrotopia =
+d6 > Armor), all on the same core.
+
+```bash
+npm run play:necrotopia          # server on campaigns/necrotopia + the Necrotopia ruleset
+# equivalent to:
+TTRPG_WORLD=campaigns/necrotopia TTRPG_RULESET=necrotopia npm run dev
+```
+
+Then open the player client (`http://localhost:5173`). You start as **the Apocalypse Kid** in a
+Las Vegas wedding chapel as imps burst through the doors — `attack the snarling imp`, survive,
+then escape to the Strip and steal the idling Cadillac. Smoke test: `npm run smoke:necrotopia`.
+
 ## How to extend
 
 ### Add a component
@@ -91,6 +108,20 @@ Point `TTRPG_WORLD` at a directory containing the generated `scenes/` to play it
 
 ### Add a campaign / ruleset directory
 
-1. Create a directory with `campaign.json` (superscene), `scenes/` (`.json` files with `{id: {components}}`), and optionally `ruleset/` (schema extensions + system prompt).
-2. Point `TTRPG_WORLD` at it.
+1. Create a directory with `campaign.json` (superscene), `scenes/` (`.json` files with `{id: {components}}`), and optionally `ruleset/<id>/` (`ruleset.js` + `system.md`).
+2. Point `TTRPG_WORLD` at it (and `TTRPG_RULESET=<id>` to load the bundle). `campaigns/necrotopia/` is a worked example.
 3. Rulesets call `registerComponents(...)` from `shared/schema.js` to extend the schema — the DM inspector, LLM contract, and validation all pick it up.
+
+### A ruleset bundle (`ruleset.js`) is pure data + optional hooks
+
+The core stays rules-neutral; a bundle plugs in its own mechanics by exporting any of:
+
+- `components` — schema extensions, registered via `registerComponents` (e.g. Necrotopia's `moves`).
+- `checks` — pluggable check definitions, registered via `registerChecks` in `shared/checks.js`. A check supplies its own `dice`, `comparator`, and `resolve()` — this is how the SAME engine rolls d20-vs-DC, 3d20 roll-under, **and** d6 > Armor.
+- `combat` — an optional combat override consumed by `shared/combat.js`:
+  - `combat.resolveAttack(params, entities, rng)` fully replaces attack resolution.
+  - `combat.initiativeMode: 'fixed'` skips the initiative roll and uses a declared turn order (party, then foes).
+  - `combat.flavor` overrides the combat narration lines (begin/victory/defeat/flee).
+- `system.md` — the DM narration voice/rules for the LLM.
+
+See `campaigns/necrotopia/ruleset/necrotopia/` for all four in ~150 lines of pure, import-free data.

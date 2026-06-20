@@ -1,0 +1,12 @@
+{
+  "start": { "scene": "vegas" },
+  "ruleset": "necrotopia",
+  "title": "Necrotopia — Apocalypse in Las Vegas",
+  "blurb": "Act 1 of the Storyline Arc. The sky has split, Heaven and Hell are at war, and you took shelter in the worst possible place: a 24-hour Las Vegas wedding chapel. Now something is pounding on the doors.",
+  "scenes": {
+    "vegas": {
+      "name": "Las Vegas — The Apocalypse",
+      "description": "Neon and fire. The Strip is coming apart as the war between Heaven and Hell pours onto Earth."
+    }
+  }
+}

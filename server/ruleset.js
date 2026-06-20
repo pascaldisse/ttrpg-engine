@@ -20,11 +20,14 @@ import { registerChecks } from '../shared/checks.js';
  * 2. registerComponents(mod.components || {})
  * 3. registerChecks(mod.checks || {})
  * 4. read <worldDir>/ruleset/<id>/system.md (utf8; '' if missing)
- * 5. return { meta, systemPrompt, components, checks }
+ * 5. return { meta, systemPrompt, components, checks, combat }
  *
- * @param {string} id — ruleset id (e.g. 'srd5e', 'dsa5')
+ * `combat` (optional bundle export) is the rules-as-data combat override consumed
+ * by the combat engine — see shared/combat.js. null when the bundle ships none.
+ *
+ * @param {string} id — ruleset id (e.g. 'srd5e', 'dsa5', 'necrotopia')
  * @param {string} worldDir — absolute path to the world/ directory
- * @returns {Promise<{meta:object, systemPrompt:string, components:object, checks:object}>}
+ * @returns {Promise<{meta:object, systemPrompt:string, components:object, checks:object, combat:object|null}>}
  */
 export async function loadRuleset(id, worldDir) {
   const bundleDir = `${worldDir}/ruleset/${id}`;
@@ -54,5 +57,6 @@ export async function loadRuleset(id, worldDir) {
     systemPrompt,
     components: mod.components || {},
     checks: mod.checks || {},
+    combat: mod.combat || null,
   };
 }

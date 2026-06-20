@@ -34,11 +34,13 @@ const TTRPG_SAVE = process.env.TTRPG_SAVE || 'default';
 // + check-def extensions and supplies the DM system prompt. No ruleset → built-in 5e.
 const TTRPG_RULESET = process.env.TTRPG_RULESET || null;
 let rulesetPrompt = null;
+let rulesetCombat = null;
 if (TTRPG_RULESET) {
   try {
     const rs = await loadRuleset(TTRPG_RULESET, TTRPG_WORLD);
     rulesetPrompt = rs.systemPrompt || null;
-    console.log(`[ruleset] Loaded "${(rs.meta && rs.meta.name) || TTRPG_RULESET}" (${(rs.meta && rs.meta.dice) || '?'})`);
+    rulesetCombat = rs.combat || null;
+    console.log(`[ruleset] Loaded "${(rs.meta && rs.meta.name) || TTRPG_RULESET}" (${(rs.meta && rs.meta.dice) || '?'})${rulesetCombat ? ' +combat' : ''}`);
   } catch (e) {
     console.error(`[ruleset] Failed to load "${TTRPG_RULESET}": ${e.message} — using built-in 5e defaults.`);
   }
@@ -77,7 +79,7 @@ const questEngine = createQuestEngine({ session, broadcast, applyAndBroadcast })
 // ---- Combat Engine (structured encounters; deterministic, no LLM) ----
 // Combat awards kill-XP through the quest engine's shared awardXp.
 
-const combat = createCombatEngine({ session, broadcast, applyAndBroadcast, awardXp: questEngine.awardXp });
+const combat = createCombatEngine({ session, broadcast, applyAndBroadcast, awardXp: questEngine.awardXp, rules: rulesetCombat });
 
 // ---- Turn Engine ----
 

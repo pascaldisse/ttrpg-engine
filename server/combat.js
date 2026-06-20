@@ -27,7 +27,20 @@ const FLEE_RE = /\b(flee|run away|run|escape|retreat|disengage|get away|leg it|w
 const ENCOUNTER_ID = 'encounter';
 const MAX_TURN_GUARD = 100; // safety against any pathological loop
 
-export function createCombatEngine({ session, broadcast, applyAndBroadcast, awardXp }) {
+export function createCombatEngine({ session, broadcast, applyAndBroadcast, awardXp, rules }) {
+  // Rules-as-data combat override (from the loaded ruleset bundle, or null → 5e default).
+  const combatRules = rules || {};
+
+  // Neutral flavor lines; a ruleset may override any via `combat.flavor`. The default
+  // strings name no setting (the old docks/tavern-specific lines lived here before).
+  const FLAVOR = {
+    begin: 'Words are done. Weapons come up — the fight is on.',
+    victory: 'The last of them drops. Breathing hard, you survey the aftermath as the violence subsides.',
+    defeat: 'The world tilts and goes dark. Your strength fails — this is where your story falters.',
+    flee: 'You tear yourself from the fight and put distance between you and the enemy, heart hammering.',
+    ...(combatRules.flavor || {}),
+  };
+
   // ---- small helpers ----
 
   const pcId = () => { const pc = findPc(session.entities); return pc ? pc[0] : null; };
@@ -83,7 +96,7 @@ export function createCombatEngine({ session, broadcast, applyAndBroadcast, awar
 
   /** Resolve one attacker→target attack: broadcast the roll, apply damage, announce a kill. */
   function doAttack(attackerId, targetId) {
-    const result = resolveAttack({ attackerId, targetId }, session.entities, session.rng());
+    const result = resolveAttack({ attackerId, targetId }, session.entities, session.rng(), combatRules);
     attackLine(attackerId, targetId, result);
     if (result.hit && result.damage > 0) {
       applyDamage(targetId, result.damage);
@@ -150,7 +163,7 @@ export function createCombatEngine({ session, broadcast, applyAndBroadcast, awar
 
     if (result === 'victory') {
       banner('end', 'The fight is over — you stand victorious.', { outcome: 'victory' });
-      narrate('The last of them drops. Breathing hard, you survey the aftermath — the docks fall quiet but for the slap of water against the pilings.');
+      narrate(FLAVOR.victory);
       // Award kill XP for the defeated enemies (P6 progression).
       if (typeof awardXp === 'function' && enc) {
         let xp = 0;
@@ -162,10 +175,10 @@ export function createCombatEngine({ session, broadcast, applyAndBroadcast, awar
       }
     } else if (result === 'defeat') {
       banner('end', 'You have fallen.', { outcome: 'defeat' });
-      narrate('The world tilts and goes dark. Your strength fails you — this is where your story falters.');
+      narrate(FLAVOR.defeat);
     } else {
       banner('end', 'You break away from the fight.', { outcome: 'flee' });
-      narrate('You tear yourself from the melee and put distance between you and the blades, heart hammering.');
+      narrate(FLAVOR.flee);
     }
   }
 
@@ -201,11 +214,12 @@ export function createCombatEngine({ session, broadcast, applyAndBroadcast, awar
    * Initiative is rolled; enemies that beat the PC act before the declared attack lands.
    */
   async function startAndResolve(actionOp, initiation) {
-    const enc = buildEncounter({ allies: initiation.allies, enemies: initiation.enemies }, session.entities, session.rng());
+    const enc = buildEncounter({ allies: initiation.allies, enemies: initiation.enemies }, session.entities, session.rng(), combatRules);
     writeEncounter(enc);
     const orderNames = enc.order.map(nameOf).join(' → ');
-    banner('start', `Steel rings out — combat begins! Initiative: ${orderNames}.`, { round: 1, order: enc.order });
-    narrate('Words are done. Weapons come up, and the dock erupts into violence.');
+    const orderLabel = enc.mode === 'round-robin' ? 'Turn order' : 'Initiative';
+    banner('start', `Combat begins! ${orderLabel}: ${orderNames}.`, { round: 1, order: enc.order });
+    narrate(FLAVOR.begin);
 
     // Run any enemies that won initiative, then resolve the player's declared attack.
     await runUntilPlayerTurn();
