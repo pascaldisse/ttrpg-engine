@@ -370,4 +370,4 @@ After this overhaul a bundle MAY export (all optional; absent ⇒ legacy behavio
 - [x] C2 — CTB timeline + turn bar
 - [x] C3 — enemies as agents (talk/intimidate/morale/improv)
 - [x] C4 — zones & improvised surfaces
-- [ ] C5 — party seats + overdrive + summons
+- [x] C5 — party seats + overdrive + summons

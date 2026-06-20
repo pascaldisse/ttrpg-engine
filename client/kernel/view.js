@@ -707,6 +707,18 @@ export class View {
         ]),
       ]);
 
+      // C5: overdrive meter pip (limit-break charge).
+      const od = (comps.meter && comps.meter.overdrive) || 0;
+      if (od > 0) {
+        const odPct = Math.max(0, Math.min(100, od));
+        row.appendChild(el('div', {
+          className: 'h-2 w-10 bg-gray-900 rounded overflow-hidden shrink-0 border border-amber-700/40',
+          title: `Overdrive ${od}/100`,
+        }, [
+          el('div', { className: `h-full ${odPct >= 100 ? 'bg-amber-300 animate-pulse' : 'bg-amber-500'}`, style: `width:${odPct}%` }),
+        ]));
+      }
+
       // C1: active status chips (bleed/stun/rage/…).
       const statuses = (comps.statuses && comps.statuses.list) || [];
       if (statuses.length) {

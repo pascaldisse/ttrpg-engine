@@ -110,7 +110,20 @@ export function createCombatEngine({ session, broadcast, applyAndBroadcast, awar
     if ((next.hazards || []).length && (next.round || 0) > (enc.round || 0)) {
       next = { ...next, hazards: next.hazards.map(h => ({ ...h, remaining: (h.remaining ?? 1) - 1 })).filter(h => h.remaining > 0) };
     }
+
+    // C5: summons whose lifetime ran out (advanceTimeline drops them from participants)
+    // leave the allies list and despawn from the world.
+    const prevSummons = (enc.participants || []).filter(p => p.summonTurns != null).map(p => p.id);
+    const nextIds = new Set((next.participants || []).map(p => p.id));
+    const expired = prevSummons.filter(id => !nextIds.has(id));
+    if (expired.length) {
+      next = { ...next, allies: (next.allies || []).filter(a => !expired.includes(a)) };
+    }
     writeEncounter(next);
+    for (const id of expired) {
+      banner('turn', `${nameOf(id)} fades back into nothing.`);
+      if (session.entities.has(id)) applyAndBroadcast([{ op: 'despawn', id }], 'combat');
+    }
     if (isTimeline()) broadcastTimeline();
   }
 
@@ -138,6 +151,7 @@ export function createCombatEngine({ session, broadcast, applyAndBroadcast, awar
     attackLine(attackerId, targetId, result);
     if (result.hit && result.damage > 0) {
       applyDamage(targetId, result.damage);
+      fillOverdriveFromDamage(attackerId, [{ op: 'damage', id: targetId, amount: result.damage }]);
       if (!isAlive(targetId)) banner('turn', `${nameOf(targetId)} falls!`);
     }
   }
@@ -176,6 +190,86 @@ export function createCombatEngine({ session, broadcast, applyAndBroadcast, awar
     if (expanded.length) applyAndBroadcast(expanded, 'combat');
   }
 
+  // ---- C5: seats / overdrive / summons ----
+
+  let summonSeq = 0;
+
+  /** Who drives this combatant seat: 'ai', or a human owner name. The PC is 'player'. */
+  function controllerOf(id) {
+    const c = session.entities.get(id) || {};
+    if ((c.identity || {}).kind === 'pc') return 'player';
+    if (c.agent && c.agent.controller) return c.agent.controller;
+    if (c.presence && c.presence.controller) return c.presence.controller;
+    return 'ai';
+  }
+  const isHumanSeat = (id) => controllerOf(id) !== 'ai';
+  const isEnemyOf = (id) => ((getEncounter() || {}).enemies || []).includes(id);
+
+  /** Broadcast a meter change (overdrive/cooldown). */
+  function meterEvent(id, meter, value, full) {
+    applyAndBroadcast([{ op: 'event', name: 'system', data: { kind: 'meter', text: `${nameOf(id)} ${meter}: ${value}/${full}`, detail: { id, meter, value, full } } }], 'combat');
+  }
+
+  /** Add overdrive charge to a combatant (capped at full), broadcasting the change. */
+  function gainOverdrive(id, points) {
+    const od = combatRules.overdrive;
+    if (!od || !points) return;
+    const c = session.entities.get(id);
+    if (!c) return;
+    const full = od.full || 100;
+    const cur = ((c.meter || {}).overdrive) || 0;
+    const next = Math.min(full, cur + points);
+    if (next === cur) return;
+    applyOps([{ op: 'setMeter', id, key: 'overdrive', value: next }]);
+    meterEvent(id, 'overdrive', next, full);
+  }
+
+  /** Fill overdrive from a set of damage ops: dealer on dealt, each target on taken. */
+  function fillOverdriveFromDamage(dealerId, ops) {
+    const od = combatRules.overdrive;
+    if (!od) return;
+    let dealt = 0;
+    for (const o of ops || []) {
+      if (o.op === 'damage' && o.amount) {
+        dealt += o.amount;
+        gainOverdrive(o.id, (od.fillOnTaken || 0) * o.amount);
+      }
+    }
+    if (dealt && dealerId) gainOverdrive(dealerId, (od.fillOnDealt || 0) * dealt);
+  }
+
+  /** Smallest current timeline `time` (so a summon enters the queue promptly). */
+  function minTimelineTime() {
+    const enc = getEncounter();
+    const ps = (enc && enc.participants) || [];
+    return ps.length ? Math.min(...ps.map(p => p.time || 0)) : 0;
+  }
+
+  /** C5: spawn a temporary summoned combatant from a Move's `summon` spec. */
+  function spawnSummon(actorId, move) {
+    const base = move.summon || {};
+    const sid = `summon-${actorId}-${++summonSeq}`;
+    const hp = base.hp || 10;
+    applyAndBroadcast([{
+      op: 'spawn', id: sid,
+      components: {
+        identity: { name: base.name || 'Summon', kind: 'npc', description: base.description || 'A summoned ally.' },
+        stats: { hp, maxHp: hp, armor: base.armor || 2, level: base.level || 1 },
+        status: { alive: true },
+        position: { zoneId: zoneOf(session.entities, actorId) },
+        moves: { list: base.moves || [] },
+        agent: { enabled: true, controller: 'ai', accent: base.accent || '#88ccff' },
+        flags: { damage: base.damage || '1d6', summon: true },
+      },
+    }], 'combat');
+
+    const enc = getEncounter();
+    const participants = [...(enc.participants || []), { id: sid, time: minTimelineTime(), speed: base.speed || 1, summonTurns: base.turns || 3 }];
+    writeEncounter({ ...enc, allies: [...(enc.allies || []), sid], participants });
+    banner('turn', `${base.name || 'A spectral ally'} is summoned to the field for ${base.turns || 3} turns!`);
+    if (isTimeline()) broadcastTimeline();
+  }
+
   /**
    * Resolve + apply a declared Move: choose a sensible target, broadcast the roll,
    * apply damage/heal ops and status ops (with status lines), announce kills.
@@ -183,18 +277,42 @@ export function createCombatEngine({ session, broadcast, applyAndBroadcast, awar
   function doMove(actorId, move, requestedTarget, text) {
     const enc = getEncounter();
     const type = move.type || 'damage';
-    let targetId = requestedTarget;
 
+    // C5: a finisher Move is gated behind a full overdrive meter; using it consumes it.
+    const od = combatRules.overdrive;
+    if (move.requiresOverdrive && od) {
+      const cur = ((session.entities.get(actorId) || {}).meter || {}).overdrive || 0;
+      const full = od.full || 100;
+      if (cur < full) {
+        banner('turn', `${nameOf(actorId)}'s ${move.name} isn't charged yet (${cur}/${full}).`);
+        return false;
+      }
+    }
+
+    // C5: a summon Move spawns a temporary AI combatant onto the timeline.
+    if (type === 'summon') {
+      moveLine(actorId, null, { summary: `${move.name}` });
+      spawnSummon(actorId, move);
+      if (move.requiresOverdrive && od) { applyOps([{ op: 'setMeter', id: actorId, key: 'overdrive', value: 0 }]); meterEvent(actorId, 'overdrive', 0, od.full || 100); }
+      return true;
+    }
+
+    let targetId = requestedTarget;
     if (type === 'heal' || type === 'buff' || type === 'utility') {
       targetId = requestedTarget || actorId;            // self by default
     } else if (type !== 'area') {
-      if (!targetId || !isAlive(targetId)) targetId = pickTarget(text, enc.enemies || []);
+      // Pick a living OPPONENT of the actor (enemies for the party; allies for a foe).
+      if (!targetId || !isAlive(targetId)) {
+        const foes = isEnemyOf(actorId) ? (enc.allies || []) : (enc.enemies || []);
+        targetId = pickTarget(text, foes);
+      }
     }
 
     const result = resolveMove(move, { actorId, targetId }, session.entities, session.rng(), combatRules);
 
     moveLine(actorId, targetId, result);
     applyOps(result.ops || []);
+    fillOverdriveFromDamage(actorId, result.ops || []);
 
     for (const sop of (result.statusOps || [])) {
       applyOps([sop]);
@@ -208,6 +326,13 @@ export function createCombatEngine({ session, broadcast, applyAndBroadcast, awar
     for (const o of (result.ops || [])) {
       if (o.op === 'damage' && o.id && !isAlive(o.id)) banner('turn', `${nameOf(o.id)} falls!`);
     }
+
+    // C5: consume the overdrive meter on a finisher.
+    if (move.requiresOverdrive && od) {
+      applyOps([{ op: 'setMeter', id: actorId, key: 'overdrive', value: 0 }]);
+      meterEvent(actorId, 'overdrive', 0, od.full || 100);
+    }
+    return true;
   }
 
   /**
@@ -313,11 +438,23 @@ export function createCombatEngine({ session, broadcast, applyAndBroadcast, awar
     moraleEvent(actorId, intent, `${nameOf(actorId)} ${verb}.`);
   }
 
-  /** Deterministic enemy turn: instinct Move (or basic attack). Zero LLM. */
+  /** Deterministic instinct turn: a Move (or basic attack) against the actor's foes. Zero LLM. */
   function runInstinct(actorId) {
     const { move, targetId } = enemyInstinct(actorId, getEncounter(), session.entities, session.rng(), combatRules);
     if (move) doMove(actorId, move, targetId, '');
     else if (targetId) doAttack(actorId, targetId);
+  }
+
+  /** C5: an AI ally (or summon) takes its turn — same code path as any other AI seat. */
+  function allyAct(actorId) {
+    runInstinct(actorId);
+    checkMorale();
+  }
+
+  /** Announce whose (human) turn it is so the owning client can act. */
+  function promptSeat(id) {
+    const ctrl = controllerOf(id);
+    banner('turn', `${nameOf(id)}'s turn${ctrl !== 'player' ? ` — ${ctrl}` : ''}.`, { turnOf: id, controller: ctrl });
   }
 
   /**
@@ -400,6 +537,15 @@ export function createCombatEngine({ session, broadcast, applyAndBroadcast, awar
       .map(([id]) => id);
   }
 
+  /** Present, living, FRIENDLY combatants (flags.ally) at the PC's location — party seats (C5). */
+  function presentAllies() {
+    const here = pcLocationId(session.entities);
+    if (!here) return [];
+    return entitiesAt(session.entities, here, { kinds: ['npc'] })
+      .filter(([_id, c]) => (c.flags || {}).ally === true && (c.status || {}).alive !== false)
+      .map(([id]) => id);
+  }
+
   /** Match a named enemy in the text, else the first living enemy. */
   function pickTarget(text, enemyIds) {
     const living = enemyIds.filter(isAlive);
@@ -436,20 +582,22 @@ export function createCombatEngine({ session, broadcast, applyAndBroadcast, awar
         if (outcome(getEncounter(), session.entities) !== 'ongoing') { endEncounter(outcome(getEncounter(), session.entities)); return; }
       }
 
-      // Player-controlled seat: a stunned/dead PC loses the turn; otherwise wait for input.
-      if (cur === pcId()) {
+      // Human-controlled seat (PC or a human ally): stunned/dead loses the turn; else pause.
+      if (isHumanSeat(cur)) {
         if (!isAlive(cur)) { advanceAfter(cur); continue; }
         if (skip) {
           banner('turn', `${nameOf(cur)} is stunned and loses the turn!`);
           advanceAfter(cur);
           continue;
         }
-        return; // the player acts
+        promptSeat(cur);
+        return; // wait for the owning client's action
       }
 
-      // Enemy seat: morale-broken agents decide via the LLM; else deterministic instinct.
+      // AI seat: an enemy (instinct/morale) or an AI ally/summon (instinct vs the foes).
       if (isAlive(cur) && !skip) {
-        await enemyAct(cur);
+        if (isEnemyOf(cur)) await enemyAct(cur);
+        else allyAct(cur);
       } else if (isAlive(cur) && skip) {
         banner('turn', `${nameOf(cur)} is stunned and can't act!`);
       }
@@ -516,7 +664,9 @@ export function createCombatEngine({ session, broadcast, applyAndBroadcast, awar
     if (!ATTACK_RE.test(actionText) && !targetIsHostile) return null;
 
     const targetId = targetIsHostile ? reqTarget : (pickTarget(actionText, enemies) || enemies[0]);
-    return { targetId, enemies, allies: [pc] };
+    // C5: friendly combatants (AI or human-seated) join the party side of the timeline.
+    const allies = [pc, ...presentAllies()];
+    return { targetId, enemies, allies };
   }
 
   /**
@@ -564,23 +714,36 @@ export function createCombatEngine({ session, broadcast, applyAndBroadcast, awar
     const text = (actionOp.text || '').trim();
     if (!inCombat()) return;
 
+    // C5: the action drives the seat whose turn it is — and only its owner may act.
+    const actor = curActor(getEncounter());
+    if (!actor) return;
+    const ctrl = controllerOf(actor);
+    const actorKind = ((session.entities.get(actor) || {}).identity || {}).kind;
+    if (ctrl === 'ai') {
+      applyAndBroadcast([{ op: 'event', name: 'system', data: { kind: 'note', text: `(It is ${nameOf(actor)}'s turn.)` } }], 'system');
+      return;
+    }
+    // The PC seat accepts any human (single PC); a named ally seat requires its owner.
+    if (actorKind !== 'pc' && actionOp.by && actionOp.by !== ctrl) {
+      applyAndBroadcast([{ op: 'event', name: 'system', data: { kind: 'note', text: `(It is ${nameOf(actor)}'s turn — wait for yours.)` } }], 'system');
+      return;
+    }
+
     // Flee (only when it isn't also a declared Move / attack).
     if (FLEE_RE.test(text) && !ATTACK_RE.test(text) && !actionOp.move) {
       endEncounter('flee');
       return;
     }
 
-    const pc = pcId();
-
     // C4: move within combat to another zone (consumes the turn).
-    if (pc && actionOp.zone) {
+    if (actionOp.zone) {
       const enc = getEncounter();
       const zone = (enc.zones || []).find(z => z.id === actionOp.zone || z.label === actionOp.zone);
       if (zone) {
-        applyOps([{ op: 'moveZone', id: pc, zoneId: zone.id }]);
-        banner('turn', `${nameOf(pc)} moves to ${zone.label}.`);
+        applyOps([{ op: 'moveZone', id: actor, zoneId: zone.id }]);
+        banner('turn', `${nameOf(actor)} moves to ${zone.label}.`);
         if (outcome(getEncounter(), session.entities) === 'ongoing') {
-          advanceAfter(pc, { cost: 1 });
+          advanceAfter(actor, { cost: 1 });
           await runUntilPlayerTurn();
         }
         return;
@@ -591,10 +754,11 @@ export function createCombatEngine({ session, broadcast, applyAndBroadcast, awar
     let usedMove = null;
 
     // C1: a declared Move on the actor's moves.list resolves via combat.resolveMove.
-    if (pc && actionOp.move) {
-      const move = findMove(pc, actionOp.move);
+    if (actionOp.move) {
+      const move = findMove(actor, actionOp.move);
       if (move) {
-        doMove(pc, move, actionOp.target, text);
+        const did = doMove(actor, move, actionOp.target, text);
+        if (did === false) return; // C5: uncharged finisher — the turn is not consumed
         usedMove = move;
         acted = true;
       }
@@ -604,10 +768,11 @@ export function createCombatEngine({ session, broadcast, applyAndBroadcast, awar
     // off-menu ("I throw sand in its eyes") is an IMPROVISED action → DM adjudication.
     if (!acted) {
       if (ATTACK_RE.test(text)) {
+        const foes = isEnemyOf(actor) ? getEncounter().allies : getEncounter().enemies;
         const target = (actionOp.target && isAlive(actionOp.target))
           ? actionOp.target
-          : pickTarget(text, getEncounter().enemies);
-        if (target && pc) doAttack(pc, target);
+          : pickTarget(text, foes);
+        if (target) doAttack(actor, target);
         else banner('turn', 'There is no enemy left to strike.');
       } else {
         await resolveImprov(actionOp);
@@ -621,8 +786,8 @@ export function createCombatEngine({ session, broadcast, applyAndBroadcast, awar
       return;
     }
 
-    // End the player's turn → enemies act.
-    advanceAfter(pc, usedMove);
+    // End this seat's turn → the floor advances to the next combatant.
+    advanceAfter(actor, usedMove);
     await runUntilPlayerTurn();
   }
 

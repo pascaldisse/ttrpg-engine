@@ -326,6 +326,21 @@ Progress is also tracked in agent memory (`ttrpg-engine-project.md`).
   vs `stats.ac`, damage via the `damage` op; victory/defeat/flee. Deterministic (no LLM); attacking a
   non-hostile stays on the narrative path (the "swappable" seam). Combat HUD in the client.
 
+- **Combat Overhaul "Living Timeline" (C1–C5) ✅** (see `COMBAT-SPEC.md`):
+  - **C1 — Moves + statuses:** neutral status engine (`shared/statuses.js`); `combat.resolveMove`; declared
+    Moves (damage/heal/buff/stun/bleed/area/utility) with status ticks (bleed/stun/rage/armor-aura/blind…)
+    threaded into the math via `aggregateModifiers`. Deterministic; client move menu + status chips.
+  - **C2 — CTB timeline:** speed-driven FFX queue (`buildTimeline`/`nextActor`/`advanceTimeline`/`projectQueue`),
+    `initiativeMode:'timeline'`, `haste`/`slow`; visible turn bar.
+  - **C3 — enemies as agents:** deterministic `enemyInstinct` (0 LLM normal path); LLM only for morale
+    decisions (`combatDecide`), talking to a foe, or improvised off-menu actions (`adjudicateCombat`).
+  - **C4 — zones & surfaces:** abstract `zones` + `position`; range enforcement; `hazards` (fire/oil) +
+    `spawnHazard`/`moveZone`; ledge board-exploits.
+  - **C5 — party seats + overdrive + summons:** AI/human-interchangeable ally seats with owner-gated turns
+    (multiplayer), `meter.overdrive` finishers, and `type:'summon'` temporary combatants.
+  - All opt-in per ruleset (5e/DSA export none → legacy behavior). New ops: applyStatus/removeStatus,
+    spawnHazard/clearHazard, moveZone, setMeter. Each phase: `tools/{test,smoke}-combat-c<N>.mjs`.
+
 - **P6 — Quests & progression ✅** trigger-driven quest state machine (`shared/quests.js`: flag/atLocation/
   hasItem/dead/allDead triggers) re-evaluated after every turn (`server/quests.js`); completion grants rewards
   (items + XP); `shared/progression.js` 5e XP/leveling (proficiency + maxHp on level-up). Combat victory awards

@@ -305,6 +305,10 @@ export const combat = {
   moveCost: (m) => (m && m.cost) || 1,  // action rank — lower-cost Moves come up again sooner
   resolveAttack: necroResolveAttack,
   resolveMove: necroResolveMove,
+  // C3: enemies break and parley once badly hurt.
+  moraleThreshold: 0.34,
+  // C5: overdrive meter — fills on damage dealt/taken; a finisher Move spends a full bar.
+  overdrive: { fillOnDealt: 1, fillOnTaken: 2, full: 100 },
   flavor: {
     begin: 'No more talk — weapons up. The apocalypse does not wait.',
     victory: 'The last of them comes apart in a wet heap. The ringing fades; you are still standing, somehow.',

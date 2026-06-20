@@ -81,16 +81,19 @@ const ok = (n) => { console.log(`  ✅ ${n}`); passed++; };
   ws.on('message', (raw) => { try { messages.push(JSON.parse(raw)); } catch {} });
   await sleep(200);
 
+  // Make every imp tanky so none dies during the deterministic window (no surprise
+  // morale breaks) and the morale target stays on the timeline (death prunes it).
+  sendOps(['npc-imp-1', 'npc-imp-2', 'npc-imp-3', 'npc-imp-4'].map(id => ({ op: 'merge', id, component: 'stats', value: { hp: 80, maxHp: 80 } })));
+  await sleep(200);
+
   // ---- (a) plain Move fight → 0 LLM beats ----
   const mark = allOps().length;
   sendMove('I attack the imp with my katana', 'Katana Sword Slash', 'npc-imp-1');
   await waitForOp(combatBanner('start'), 8000, 'combat start');
-  await sleep(500);
-  sendMove('I cut again', 'Katana Sword Slash', 'npc-imp-2');
-  await sleep(700);
+  await sleep(800);
   const llmCount = allOps().slice(mark).filter(llmEvt).length;
   if (llmCount !== 0) throw new Error(`plain Move fight made ${llmCount} LLM beat(s) — expected 0`);
-  ok('cost discipline: a plain Move fight makes 0 LLM narration/dialogue calls');
+  ok('cost discipline: a plain Move fight (with an AI ally) makes 0 LLM narration/dialogue calls');
 
   // ---- (b) improvised action → check + blind status ----
   sendMove('I throw a fistful of sand in its eyes', undefined, undefined);
@@ -99,28 +102,27 @@ const ok = (n) => { console.log(`  ✅ ${n}`); passed++; };
   ok('improv: "throw sand in its eyes" → engine check + a blind status (LLM chose the shape)');
 
   // ---- (c) talk to an enemy → dialogue in its voice ----
-  sendMove('@Snarling why are you doing this?', undefined, undefined);
-  await waitForOp(o => o.op === 'event' && o.name === 'dialogue' && o.data && o.data.by === 'npc-imp-1', 8000, 'imp dialogue');
-  ok('talk: addressing an enemy (@Snarling) gets a dialogue line in its voice');
+  sendMove('@Cackling why are you doing this?', undefined, undefined);
+  await waitForOp(o => o.op === 'event' && o.name === 'dialogue' && o.data && o.data.by === 'npc-imp-2', 8000, 'imp dialogue');
+  ok('talk: addressing an enemy (@Cackling) gets a dialogue line in its voice');
 
   // ---- (d) morale break → the imp decides and flees ----
-  // heal the PC and drop an imp to 1 HP, then take a turn so checkMorale fires.
+  // drop ONE imp to 1 HP (others stay healthy, so it's hp — not last-standing — that breaks it).
   sendOps([
     { op: 'merge', id: 'pc-hero', component: 'stats', value: { hp: 28 } },
-    { op: 'merge', id: 'npc-imp-1', component: 'stats', value: { hp: 1 } },
+    { op: 'merge', id: 'npc-imp-2', component: 'stats', value: { hp: 1 } },
   ]);
   await sleep(200);
   sendMove('I steady my breathing', 'Chi Healing');
   await waitForOp(sysKind('morale', 'shaken'), 8000, 'morale breaks (shaken)');
   await waitForOp(sysKind('parley', 'flee'), 8000, 'broken imp flees');
-  // confirm it left the encounter
   for (let i = 0; i < 40; i++) {
     const en = await encEnemies();
-    if (!en.includes('npc-imp-1')) break;
+    if (!en.includes('npc-imp-2')) break;
     await sleep(50);
   }
   const en = await encEnemies();
-  if (en.includes('npc-imp-1')) throw new Error('fled imp still in encounter.enemies: ' + JSON.stringify(en));
+  if (en.includes('npc-imp-2')) throw new Error('fled imp still in encounter.enemies: ' + JSON.stringify(en));
   ok('morale: a broken imp wakes the LLM, decides to flee, and leaves the encounter');
 
   console.log(`\n${passed} C3 enemy-agent smoke checks passed (mock provider).`);

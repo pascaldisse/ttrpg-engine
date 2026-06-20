@@ -96,6 +96,13 @@ export const SCHEMA = {
       },
     },
   },
+  meter: {
+    doc: 'Resource meters (C5): overdrive / spell points / cooldowns. Neutral open map, e.g. { overdrive: 0..100 }.',
+    default: {},
+    fields: {
+      overdrive: { doc: 'Overdrive/limit-break charge 0..100. Fills on damage dealt/taken; a finisher Move (requiresOverdrive) consumes it.', range: [0, 100] },
+    },
+  },
   position: {
     doc: 'Abstract combat zone of a combatant (C4). Absent ⇒ the single implicit zone "field".',
     default: { zoneId: 'field' },

@@ -223,6 +223,11 @@ const SEMANTIC_HANDLERS = {
     return [{ op: 'merge', id: op.id, component: 'position', value: { zoneId: op.zoneId } }];
   },
 
+  /** {op:'setMeter', id, key, value} → merge meter {[key]: value} (overdrive/cooldown). C5. */
+  setMeter(entities, op) {
+    return [{ op: 'merge', id: op.id, component: 'meter', value: { [op.key]: op.value } }];
+  },
+
   /** {op:'setFlag', key, value, id?} → merge flags on id (default 'world-state') */
   setFlag(entities, op) {
     const targetId = op.id || 'world-state';

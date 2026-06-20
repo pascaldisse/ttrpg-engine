@@ -22,7 +22,9 @@
     "moves": { "list": [
       { "name": "Katana Sword Slash", "type": "damage", "damage": "1d6", "cost": 1, "special": "Clean steel, close range." },
       { "name": "Rage Roar", "type": "buff", "status": "rage", "magnitude": 2, "duration": 2, "cost": 1, "special": "+2 damage for 2 rounds." },
-      { "name": "Chi Healing", "type": "heal", "damage": "1d6", "cost": 1, "special": "Heal yourself 1d6 (cannot exceed max Health)." }
+      { "name": "Chi Healing", "type": "heal", "damage": "1d6", "cost": 1, "special": "Heal yourself 1d6 (cannot exceed max Health)." },
+      { "name": "Guardian Ghost", "type": "summon", "cost": 2, "summon": { "name": "Guardian Ghost", "hp": 10, "turns": 3, "damage": "1d6", "accent": "#aa44ff", "moves": [ { "name": "Spectral Slash", "type": "damage", "damage": "1d6", "cost": 1 } ] }, "special": "Summon a spectral ally that fights for 3 turns." },
+      { "name": "Apocalypse Now", "type": "area", "damage": "3d6", "cost": 2, "requiresOverdrive": true, "special": "Overdrive finisher — rip the whole zone apart. Requires a full meter." }
     ]},
     "status": { "alive": true, "conditions": [] },
     "place": { "locationId": "loc-chapel", "connections": [] },
@@ -52,11 +54,14 @@
         "He's out of shotgun shells after the next two blasts."
       ]
     },
-    "agent": { "enabled": true, "accent": "#e0b341" },
+    "agent": { "enabled": true, "controller": "ai", "accent": "#e0b341" },
+    "stats": { "hp": 18, "maxHp": 18, "armor": 2, "level": 1 },
+    "moves": { "list": [ { "name": "Shotgun Blast", "type": "damage", "damage": "1d6", "cost": 1, "special": "A pump-shotgun roar — two shells, then he's dry." } ] },
     "status": { "alive": true, "conditions": [] },
     "place": { "locationId": "loc-chapel", "connections": [] },
+    "position": { "zoneId": "the-aisle" },
     "inventory": { "items": [] },
-    "flags": { "trust_player": 0 }
+    "flags": { "trust_player": 0, "ally": true, "damage": "1d6" }
   },
 
   "npc-imp-1": {

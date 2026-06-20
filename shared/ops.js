@@ -157,12 +157,19 @@ const moveZoneSchema = z.object({
   zoneId: z.string(),
 });
 
+const setMeterSchema = z.object({
+  op: z.literal('setMeter'),
+  id: z.string(),
+  key: z.string(),
+  value: z.number(),
+});
+
 export const opUnion = z.discriminatedUnion('op', [
   spawnSchema, setSchema, mergeSchema, despawnSchema,
   eventSchema, actionSchema, rollSchema, resetSchema,
   damageSchema, healSchema, giveItemSchema, takeItemSchema, moveSchema, setFlagSchema,
   takeSchema, dropSchema, applyStatusSchema, removeStatusSchema,
-  spawnHazardSchema, clearHazardSchema, moveZoneSchema,
+  spawnHazardSchema, clearHazardSchema, moveZoneSchema, setMeterSchema,
 ]);
 
 const batchSchema = z.array(opUnion);
