@@ -122,7 +122,7 @@ The core stays rules-neutral; a bundle plugs in its own mechanics by exporting a
 - `combat` — an optional combat override consumed by `shared/combat.js`:
   - `combat.resolveAttack(params, entities, rng, mods)` fully replaces attack resolution.
   - `combat.resolveMove(move, params, entities, rng, mods)` resolves a declared **Move** (damage/heal/buff/stun/bleed/area/utility) → `{ops, statusOps, summary}`. The engine threads aggregated status `mods` (rage/armor/aim) into both resolvers; the bundle stays import-free.
-  - `combat.initiativeMode: 'fixed'` skips the initiative roll and uses a declared turn order (party, then foes).
+  - `combat.initiativeMode: 'timeline'` (C2) drives a **CTB timeline** — a speed-driven FFX-style queue (`speedOf`, `moveCost`); `'fixed'` skips the roll for a declared order; unset → classic d20 initiative.
   - `combat.flavor` overrides the combat narration lines (begin/victory/defeat/flee).
 - **Combat moves & statuses (C1):** every combatant has a `moves.list`; the player declares a Move (+ target) each turn via the combat HUD. Moves do mechanically distinct things and apply statuses that tick at the start of a bearer's turn (bleed bites, stun skips, rage/armor-aura modify the math). Fully deterministic — no LLM in the loop.
 - `system.md` — the DM narration voice/rules for the LLM.

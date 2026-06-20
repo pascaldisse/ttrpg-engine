@@ -127,6 +127,9 @@ export const statuses = {
   'flawless-aim': { doc: 'Flawless aim — attacks auto-hit (skip the hit roll).', tag: 'buff', modifyOutgoing: () => ({ autoHit: true }) },
   // Debuff: -1 effective Armor on the bearer (armor-break / acid).
   'armor-break': { doc: 'Armor break — -1 effective Armor on the bearer.', tag: 'debuff', modifyIncoming: () => ({ armorDelta: -1 }) },
+  // C2 timeline: haste doubles CTB speed (acts twice as often); slow halves it.
+  haste: { doc: 'Haste — ×2 CTB speed (acts sooner / more often).', tag: 'buff', modifySpeed: (sp) => sp * 2 },
+  slow: { doc: 'Slow — ×0.5 CTB speed (acts later / less often).', tag: 'debuff', modifySpeed: (sp) => sp * 0.5 },
 };
 
 // ---- Combat override (EXTENSION SEAM in shared/combat.js) ----
@@ -274,8 +277,10 @@ function necroResolveMove(move, { actorId, targetId }, entities, rng, mods = {})
 }
 
 export const combat = {
-  // No initiative roll in Necrotopia — the GM declares order (party acts, then foes).
-  initiativeMode: 'fixed',
+  // C2: CTB timeline — no initiative roll; turn order is speed-driven (FFX-style).
+  initiativeMode: 'timeline',
+  speedOf: () => 1,                 // Necrotopia: flat base speed (haste/slow reshuffle it)
+  moveCost: (m) => (m && m.cost) || 1,  // action rank — lower-cost Moves come up again sooner
   resolveAttack: necroResolveAttack,
   resolveMove: necroResolveMove,
   flavor: {

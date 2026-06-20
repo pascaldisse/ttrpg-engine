@@ -647,6 +647,10 @@ export class View {
     const order = enc.order || [];
     const turnIndex = enc.turnIndex;
     const enemies = new Set(enc.enemies || []);
+    const isTimeline = enc.mode === 'timeline';
+    // Timeline mode has no fixed `order` — list every combatant; "current" is turnOf.
+    const combatants = isTimeline ? [...(enc.allies || []), ...(enc.enemies || [])] : order;
+    const currentId = isTimeline ? enc.turnOf : order[turnIndex];
 
     clear(this.sceneAreaEl);
     this.sceneAreaEl.className = 'col-span-8 bg-gray-900 rounded-lg border border-gray-700 p-3 min-h-[200px] overflow-y-auto';
@@ -658,11 +662,16 @@ export class View {
       ])
     );
 
-    // Initiative order rows
+    // C2: the visible CTB turn bar — upcoming actor chips from enc.queue.
+    if (isTimeline && (enc.queue || []).length) {
+      this.sceneAreaEl.appendChild(this._renderTurnBar(enc.queue, currentId, enemies));
+    }
+
+    // Combatant rows
     const orderContainer = el('div', { className: 'space-y-1' });
 
-    for (let i = 0; i < order.length; i++) {
-      const id = order[i];
+    for (let i = 0; i < combatants.length; i++) {
+      const id = combatants[i];
       const comps = this.store.entities.get(id);
       if (!comps) continue;
 
@@ -673,7 +682,7 @@ export class View {
       const hp = stats.hp ?? '?';
       const maxHp = stats.maxHp ?? '?';
       const alive = status.alive !== false;
-      const isCurrent = i === turnIndex;
+      const isCurrent = id === currentId;
       const isEnemy = enemies.has(id);
 
       const hpPercent = maxHp > 0 ? Math.max(0, Math.min(100, (hp / maxHp) * 100)) : 100;
@@ -718,12 +727,36 @@ export class View {
     if (pcPair) {
       const [pcId, pc] = pcPair;
       const moves = (pc.moves && pc.moves.list) || [];
-      if (order[turnIndex] === pcId && moves.length) {
+      if (currentId === pcId && moves.length) {
         this.sceneAreaEl.appendChild(this._renderMoveMenu(pcId, moves, enc));
       } else {
         this._selectedMove = null;
       }
     }
+  }
+
+  /**
+   * C2 turn bar: a horizontal strip of upcoming actor chips (name + accent + HP pip),
+   * current actor highlighted. Driven by the encounter's projected `queue`.
+   */
+  _renderTurnBar(queue, currentId, enemies) {
+    const bar = el('div', { className: 'flex items-center gap-1 mb-3 overflow-x-auto pb-1' });
+    bar.appendChild(el('span', { className: 'text-[10px] uppercase tracking-wider text-gray-500 shrink-0 mr-1' }, ['Next']));
+    queue.forEach((id, i) => {
+      const comps = this.store.entities.get(id) || {};
+      const name = (comps.identity || {}).name || id;
+      const stats = comps.stats || {};
+      const hp = stats.hp ?? '?';
+      const maxHp = stats.maxHp ?? '?';
+      const isEnemy = enemies.has(id);
+      const isNow = i === 0 || id === currentId;
+      const accent = isEnemy ? 'text-red-300 border-red-700/50' : 'text-blue-300 border-blue-700/50';
+      bar.appendChild(el('div', {
+        className: `shrink-0 px-2 py-0.5 rounded border text-[11px] ${accent} ${isNow ? 'bg-yellow-900/30 ring-1 ring-yellow-600' : 'bg-gray-800/60'}`,
+        title: `${name} — ${hp}/${maxHp}`,
+      }, [`${name.split(' ').slice(-1)[0]} ${hp}`]));
+    });
+    return bar;
   }
 
   /**

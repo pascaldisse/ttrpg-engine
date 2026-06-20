@@ -367,7 +367,7 @@ After this overhaul a bundle MAY export (all optional; absent ⇒ legacy behavio
 
 ### Status checkboxes (update as you land each)
 - [x] C1 — Moves + status engine
-- [ ] C2 — CTB timeline + turn bar
+- [x] C2 — CTB timeline + turn bar
 - [ ] C3 — enemies as agents (talk/intimidate/morale/improv)
 - [ ] C4 — zones & improvised surfaces
 - [ ] C5 — party seats + overdrive + summons

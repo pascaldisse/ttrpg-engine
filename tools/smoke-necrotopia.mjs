@@ -16,7 +16,7 @@ import fs from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { makeRng } from '../shared/rng.js';
 import { resolveCheck, registerChecks } from '../shared/checks.js';
-import { resolveAttack, buildEncounter } from '../shared/combat.js';
+import { resolveAttack, buildTimeline, nextActor, projectQueue } from '../shared/combat.js';
 import { registerComponents } from '../shared/schema.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -76,15 +76,20 @@ const bundlePath = path.join(root, 'campaigns/necrotopia/ruleset/necrotopia/rule
     ok('combat override: resolveAttack uses d6>Armor (no d20, no ability mod)');
   }
 
-  // fixed turn order: party first, then foes — no initiative roll.
+  // CTB timeline (C2): no initiative roll; speed-driven order. flat speed 1 → tie-break id.
   {
     const entities = new Map([
-      ['pc', { stats: {} }], ['e1', { stats: {} }], ['e2', { stats: {} }],
+      ['pc', { stats: {}, status: { alive: true } }],
+      ['e1', { stats: {}, status: { alive: true } }],
+      ['e2', { stats: {}, status: { alive: true } }],
     ]);
-    const enc = buildEncounter({ allies: ['pc'], enemies: ['e1', 'e2'] }, entities, makeRng(1), rs.combat);
-    assert(JSON.stringify(enc.order) === JSON.stringify(['pc', 'e1', 'e2']), 'declared order: allies then enemies');
-    assert(enc.mode === 'round-robin', 'fixed initiative → round-robin mode');
-    ok('combat override: initiativeMode "fixed" → GM-declared turn order (no roll)');
+    const enc = buildTimeline({ allies: ['pc'], enemies: ['e1', 'e2'] }, entities, rs.combat);
+    assert(enc.mode === 'timeline', 'initiativeMode "timeline" → timeline mode');
+    assert(enc.participants.length === 3, 'all three combatants are participants');
+    assert(enc.turnOf === nextActor(enc), 'turnOf is the next actor (min time)');
+    assert(Array.isArray(enc.queue) && enc.queue.length > 0, 'a non-empty projected turn queue');
+    assert(projectQueue(enc, entities, rs.combat, 3).length === 3, 'projectQueue simulates forward');
+    ok('combat override: initiativeMode "timeline" → CTB queue (no initiative roll)');
   }
 
   // ---- Layer 2: BOOT the server on the Necrotopia campaign ----

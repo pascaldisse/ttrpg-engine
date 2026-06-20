@@ -17,6 +17,7 @@
 
 import {
   buildEncounter, currentCombatant, resolveAttack, resolveMove, advanceTurn, outcome,
+  buildTimeline, advanceTimeline, projectQueue,
 } from '../shared/combat.js';
 import { expandOp, expandOps } from '../shared/effects.js';
 import { tickStatuses } from '../shared/statuses.js';
@@ -75,6 +76,36 @@ export function createCombatEngine({ session, broadcast, applyAndBroadcast, awar
       op: 'event', name: 'system',
       data: { kind: 'combat', phase, text, ...extra },
     }], 'combat');
+  }
+
+  // ---- timeline (C2) vs legacy turn-order helpers ----
+
+  const isTimeline = () => combatRules.initiativeMode === 'timeline';
+
+  /** The id whose turn it is now (timeline: turnOf; else order[turnIndex]). */
+  const curActor = (enc) => (isTimeline() ? (enc && enc.turnOf) || null : currentCombatant(enc));
+
+  /** The CTB action cost of a Move (ruleset moveCost, else move.cost, else 1). */
+  function actionCostOf(move) {
+    if (typeof combatRules.moveCost === 'function') return combatRules.moveCost(move || {});
+    return (move && move.cost) || 1;
+  }
+
+  /** Broadcast the projected turn bar (timeline mode only). */
+  function broadcastTimeline() {
+    const enc = getEncounter();
+    if (!enc || enc.mode !== 'timeline') return;
+    banner('timeline', '', { queue: projectQueue(enc, session.entities, combatRules, 8), turnOf: enc.turnOf });
+  }
+
+  /** Advance the floor after `actorId` acted (timeline charges Move cost; legacy bumps turnIndex). */
+  function advanceAfter(actorId, move) {
+    const enc = getEncounter();
+    const next = isTimeline()
+      ? advanceTimeline(enc, actorId, actionCostOf(move), session.entities, combatRules)
+      : advanceTurn(enc, session.entities);
+    writeEncounter(next);
+    if (isTimeline()) broadcastTimeline();
   }
 
   function attackLine(attackerId, targetId, result) {
@@ -226,7 +257,7 @@ export function createCombatEngine({ session, broadcast, applyAndBroadcast, awar
 
       if (outcome(enc, session.entities) !== 'ongoing') { endEncounter(outcome(enc, session.entities)); return; }
 
-      const cur = currentCombatant(enc);
+      const cur = curActor(enc);
       if (!cur) return;
 
       // Start-of-turn status tick (bleed bites; stun flags a skip). Only if alive.
@@ -239,10 +270,10 @@ export function createCombatEngine({ session, broadcast, applyAndBroadcast, awar
 
       // Player-controlled seat: a stunned/dead PC loses the turn; otherwise wait for input.
       if (cur === pcId()) {
-        if (!isAlive(cur)) { writeEncounter(advanceTurn(getEncounter(), session.entities)); continue; }
+        if (!isAlive(cur)) { advanceAfter(cur); continue; }
         if (skip) {
           banner('turn', `${nameOf(cur)} is stunned and loses the turn!`);
-          writeEncounter(advanceTurn(getEncounter(), session.entities));
+          advanceAfter(cur);
           continue;
         }
         return; // the player acts
@@ -257,8 +288,8 @@ export function createCombatEngine({ session, broadcast, applyAndBroadcast, awar
       }
 
       if (outcome(getEncounter(), session.entities) !== 'ongoing') { endEncounter(outcome(getEncounter(), session.entities)); return; }
-      // Advance to the next living combatant (skips the dead, bumps the round on wrap).
-      writeEncounter(advanceTurn(getEncounter(), session.entities));
+      // Advance the floor (timeline charges cost; legacy skips dead + bumps round).
+      advanceAfter(cur);
     }
   }
 
@@ -326,11 +357,16 @@ export function createCombatEngine({ session, broadcast, applyAndBroadcast, awar
    * Initiative is rolled; enemies that beat the PC act before the declared attack lands.
    */
   async function startAndResolve(actionOp, initiation) {
-    const enc = buildEncounter({ allies: initiation.allies, enemies: initiation.enemies }, session.entities, session.rng(), combatRules);
+    const enc = isTimeline()
+      ? buildTimeline({ allies: initiation.allies, enemies: initiation.enemies }, session.entities, combatRules)
+      : buildEncounter({ allies: initiation.allies, enemies: initiation.enemies }, session.entities, session.rng(), combatRules);
     writeEncounter(enc);
-    const orderNames = enc.order.map(nameOf).join(' → ');
-    const orderLabel = enc.mode === 'round-robin' ? 'Turn order' : 'Initiative';
-    banner('start', `Combat begins! ${orderLabel}: ${orderNames}.`, { round: 1, order: enc.order });
+
+    const orderSeq = isTimeline() ? enc.queue : enc.order;
+    const orderNames = (orderSeq || []).map(nameOf).join(' → ');
+    const orderLabel = isTimeline() ? 'Timeline' : (enc.mode === 'round-robin' ? 'Turn order' : 'Initiative');
+    banner('start', `Combat begins! ${orderLabel}: ${orderNames}.`, { round: 1, order: enc.order, queue: enc.queue, turnOf: enc.turnOf });
+    if (isTimeline()) broadcastTimeline();
     narrate(FLAVOR.begin);
 
     // Run any enemies that won initiative, then resolve the player's declared attack.
@@ -354,12 +390,14 @@ export function createCombatEngine({ session, broadcast, applyAndBroadcast, awar
 
     const pc = pcId();
     let acted = false;
+    let usedMove = null;
 
     // C1: a declared Move on the actor's moves.list resolves via combat.resolveMove.
     if (pc && actionOp.move) {
       const move = findMove(pc, actionOp.move);
       if (move) {
         doMove(pc, move, actionOp.target, text);
+        usedMove = move;
         acted = true;
       }
     }
@@ -382,7 +420,7 @@ export function createCombatEngine({ session, broadcast, applyAndBroadcast, awar
     }
 
     // End the player's turn → enemies act.
-    writeEncounter(advanceTurn(getEncounter(), session.entities));
+    advanceAfter(pc, usedMove);
     await runUntilPlayerTurn();
   }
 

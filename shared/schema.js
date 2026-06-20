@@ -139,15 +139,18 @@ export const SCHEMA = {
   },
   encounter: {
     doc: 'Active combat encounter (the floor/turn system). Lives on the singleton entity id "encounter".',
-    default: { active: false, round: 0, order: [], turnIndex: 0, mode: 'initiative', enemies: [], allies: [] },
+    default: { active: false, round: 0, order: [], turnIndex: 0, mode: 'initiative', enemies: [], allies: [], participants: [], turnOf: null, queue: [] },
     fields: {
       active:    { doc: 'Is a combat encounter in progress?' },
       round:     { doc: 'Current round number (1-based once started).' },
       order:     { doc: 'Initiative order: array of combatant entity ids, highest initiative first.' },
       turnIndex: { doc: 'Index into order whose turn it is.' },
-      mode:      { doc: 'Turn mode.', enum: ['initiative', 'free', 'round-robin'] },
+      mode:      { doc: 'Turn mode.', enum: ['initiative', 'free', 'round-robin', 'timeline'] },
       enemies:   { doc: 'Entity ids hostile to the party.' },
       allies:    { doc: 'Entity ids on the party side (incl. the PC).' },
+      participants: { doc: 'CTB timeline (C2): array of { id, time, speed, summonTurns? }. time = accumulated action cost; the actor with min time acts next.' },
+      turnOf:    { doc: 'CTB timeline (C2): id of the combatant whose turn it is now.' },
+      queue:     { doc: 'CTB timeline (C2): projected upcoming actor ids (the visible turn bar).' },
     },
   },
   dmControl: {

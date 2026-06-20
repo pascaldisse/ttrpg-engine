@@ -20,7 +20,7 @@
  */
 
 import { resolveCheck, abilityMod } from './checks.js';
-import { aggregateModifiers } from './statuses.js';
+import { aggregateModifiers, speedMultiplier } from './statuses.js';
 
 // ---- Helpers ----
 
@@ -322,6 +322,120 @@ export function advanceTurn(encounter, entities) {
     enemies: [...(encounter.enemies || [])],
     allies: [...(encounter.allies || [])],
   };
+}
+
+// ---- CTB timeline (C2) ----
+//
+// A Final Fantasy X conditional-turn-based queue: each combatant accumulates `time`
+// as they act; the one with the LEAST time goes next. Faster Moves (lower cost) and
+// higher speed (haste) bring an actor's next turn up sooner. PURE — same seed, same
+// config ⇒ identical order. Opt-in via `rules.initiativeMode === 'timeline'`.
+
+/** Effective speed = base speed × status speed-multiplier (haste/slow), floored > 0. */
+function effSpeed(entities, id, baseSpeed) {
+  return Math.max(0.01, (baseSpeed || 1) * speedMultiplier(entities, id));
+}
+
+/** Is this combatant still alive (eligible to take timeline turns)? */
+function aliveIn(entities, id) {
+  const e = entities.get(id);
+  return !!e && (e.status || {}).alive !== false;
+}
+
+/**
+ * Build a timeline encounter from allies+enemies. No initiative roll — turn order is
+ * speed-driven. `rules.speedOf(entity)` supplies each combatant's base CTB speed (default 1).
+ * @returns {object} encounter value with mode:'timeline', participants, turnOf, queue.
+ */
+export function buildTimeline({ allies, enemies }, entities, rules = {}) {
+  const speedOf = typeof rules.speedOf === 'function' ? rules.speedOf : () => 1;
+  const ids = [...allies, ...enemies];
+  const participants = ids
+    .filter(id => aliveIn(entities, id))
+    .map(id => ({ id, time: 0, speed: speedOf(entities.get(id)) || 1 }));
+
+  const enc = {
+    active: true, round: 1, mode: 'timeline',
+    participants, turnOf: null, queue: [],
+    enemies: [...enemies], allies: [...allies],
+    order: [], turnIndex: 0, // legacy fields kept null-ish for back-compat HUD/inspector
+  };
+  enc.turnOf = nextActor(enc);
+  enc.queue = projectQueue(enc, entities, rules, 8);
+  return enc;
+}
+
+/**
+ * The id of the participant who acts next: least accumulated `time`.
+ * Tie-break: higher speed first, then id ascending (deterministic).
+ * @returns {string|null}
+ */
+export function nextActor(encounter) {
+  const ps = encounter.participants || [];
+  let best = null;
+  for (const p of ps) {
+    if (!best
+      || p.time < best.time
+      || (p.time === best.time && p.speed > best.speed)
+      || (p.time === best.time && p.speed === best.speed && p.id.localeCompare(best.id) < 0)) {
+      best = p;
+    }
+  }
+  return best ? best.id : null;
+}
+
+/**
+ * Charge an actor for taking a turn (time += actionCost / effectiveSpeed), prune the
+ * dead, then recompute turnOf + queue. Returns a NEW encounter — never mutates input.
+ * @param {object} encounter
+ * @param {string} actorId
+ * @param {number} actionCost — the Move's cost/rank (default 1)
+ * @param {Map<string,object>} entities
+ * @param {object} [rules]
+ */
+export function advanceTimeline(encounter, actorId, actionCost, entities, rules = {}) {
+  const cost = (typeof actionCost === 'number' && actionCost > 0) ? actionCost : 1;
+  let participants = (encounter.participants || []).map(p => ({ ...p }));
+
+  const actor = participants.find(p => p.id === actorId);
+  if (actor) actor.time += cost / effSpeed(entities, actorId, actor.speed);
+
+  // Drop the dead; decrement summon lifetimes (C5) and drop expired summons.
+  participants = participants
+    .map(p => (p.summonTurns != null ? { ...p, summonTurns: p.id === actorId ? p.summonTurns - 1 : p.summonTurns } : p))
+    .filter(p => aliveIn(entities, p.id) && (p.summonTurns == null || p.summonTurns > 0));
+
+  const next = { ...encounter, participants };
+  next.turnOf = nextActor(next);
+  next.queue = projectQueue(next, entities, rules, 8);
+  const minTime = participants.length ? Math.min(...participants.map(p => p.time)) : (encounter.round - 1);
+  next.round = Math.floor(minTime) + 1;
+  return next;
+}
+
+/**
+ * Simulate forward `n` turns (no mutation) to project the visible turn bar. Assumes a
+ * nominal cost of 1 per future turn (real costs aren't known yet); honors speed/haste.
+ * @returns {string[]} upcoming actor ids
+ */
+export function projectQueue(encounter, entities, rules = {}, n = 8) {
+  const sim = (encounter.participants || [])
+    .filter(p => aliveIn(entities, p.id))
+    .map(p => ({ ...p }));
+  const out = [];
+  for (let i = 0; i < n && sim.length; i++) {
+    let best = sim[0];
+    for (const p of sim) {
+      if (p.time < best.time
+        || (p.time === best.time && p.speed > best.speed)
+        || (p.time === best.time && p.speed === best.speed && p.id.localeCompare(best.id) < 0)) {
+        best = p;
+      }
+    }
+    out.push(best.id);
+    best.time += 1 / effSpeed(entities, best.id, best.speed);
+  }
+  return out;
 }
 
 /**
