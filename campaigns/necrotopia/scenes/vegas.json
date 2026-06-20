@@ -54,7 +54,12 @@
 
   "npc-imp-1": {
     "identity": { "name": "Snarling Imp", "kind": "npc", "description": "A knee-high devil the color of a bruise, all teeth and claws, dripping something black onto the carpet." },
-    "persona": { "personality": "Vicious, gleeful, dumb. Attacks the nearest warm thing." },
+    "persona": { "personality": "Vicious, gleeful, dumb. Attacks the nearest warm thing.", "voice": "High, scratchy, gleeful — taunts in broken English." },
+    "agent": { "enabled": true, "accent": "#a64dff" },
+    "knowledge": {
+      "facts": ["We came through the rift to kill everything warm."],
+      "secrets": ["We fear the big one that comes after us far more than we fear you."]
+    },
     "stats": { "hp": 4, "maxHp": 4, "armor": 2, "level": 1, "xp": 10 },
     "status": { "alive": true, "conditions": [] },
     "place": { "locationId": "loc-chapel", "connections": [] },
@@ -63,7 +68,12 @@
   },
   "npc-imp-2": {
     "identity": { "name": "Cackling Imp", "kind": "npc", "description": "Another imp, this one missing an eye and laughing like a broken toy." },
-    "persona": { "personality": "Vicious, gleeful, dumb. Attacks the nearest warm thing." },
+    "persona": { "personality": "Vicious, gleeful, dumb. Attacks the nearest warm thing.", "voice": "High, scratchy, gleeful — taunts in broken English." },
+    "agent": { "enabled": true, "accent": "#a64dff" },
+    "knowledge": {
+      "facts": ["We came through the rift to kill everything warm."],
+      "secrets": ["We fear the big one that comes after us far more than we fear you."]
+    },
     "stats": { "hp": 4, "maxHp": 4, "armor": 2, "level": 1, "xp": 10 },
     "status": { "alive": true, "conditions": [] },
     "place": { "locationId": "loc-chapel", "connections": [] },
@@ -72,7 +82,12 @@
   },
   "npc-imp-3": {
     "identity": { "name": "Lunging Imp", "kind": "npc", "description": "A wiry imp already springing off a pew toward your throat." },
-    "persona": { "personality": "Vicious, gleeful, dumb. Attacks the nearest warm thing." },
+    "persona": { "personality": "Vicious, gleeful, dumb. Attacks the nearest warm thing.", "voice": "High, scratchy, gleeful — taunts in broken English." },
+    "agent": { "enabled": true, "accent": "#a64dff" },
+    "knowledge": {
+      "facts": ["We came through the rift to kill everything warm."],
+      "secrets": ["We fear the big one that comes after us far more than we fear you."]
+    },
     "stats": { "hp": 4, "maxHp": 4, "armor": 2, "level": 1, "xp": 10 },
     "status": { "alive": true, "conditions": [] },
     "place": { "locationId": "loc-chapel", "connections": [] },
@@ -81,7 +96,12 @@
   },
   "npc-imp-4": {
     "identity": { "name": "Hissing Imp", "kind": "npc", "description": "The runt of the litter, hanging back and hissing — the kind that bites you while you fight its bigger friends." },
-    "persona": { "personality": "Vicious, gleeful, dumb. Attacks the nearest warm thing." },
+    "persona": { "personality": "Vicious, gleeful, dumb. Attacks the nearest warm thing.", "voice": "High, scratchy, gleeful — taunts in broken English." },
+    "agent": { "enabled": true, "accent": "#a64dff" },
+    "knowledge": {
+      "facts": ["We came through the rift to kill everything warm."],
+      "secrets": ["We fear the big one that comes after us far more than we fear you."]
+    },
     "stats": { "hp": 4, "maxHp": 4, "armor": 2, "level": 1, "xp": 10 },
     "status": { "alive": true, "conditions": [] },
     "place": { "locationId": "loc-chapel", "connections": [] },

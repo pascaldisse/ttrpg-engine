@@ -125,6 +125,7 @@ The core stays rules-neutral; a bundle plugs in its own mechanics by exporting a
   - `combat.initiativeMode: 'timeline'` (C2) drives a **CTB timeline** — a speed-driven FFX-style queue (`speedOf`, `moveCost`); `'fixed'` skips the roll for a declared order; unset → classic d20 initiative.
   - `combat.flavor` overrides the combat narration lines (begin/victory/defeat/flee).
 - **Combat moves & statuses (C1):** every combatant has a `moves.list`; the player declares a Move (+ target) each turn via the combat HUD. Moves do mechanically distinct things and apply statuses that tick at the start of a bearer's turn (bleed bites, stun skips, rage/armor-aura modify the math). Fully deterministic — no LLM in the loop.
+- **Enemies as agents (C3):** each enemy runs deterministic `enemyInstinct` by default (zero LLM). The LLM wakes ONLY for the interesting beats — a morale-broken enemy's decision (`combat.enemyInstinct`/`moraleThreshold` → fight/flee/surrender/parley via `npcAgent.combatDecide`), addressing an enemy mid-fight (`@Name …` → it answers in voice), or an improvised off-menu action ("throw sand in its eyes" → `dmAgent.adjudicateCombat` returns a check + status; the engine rolls).
 - `system.md` — the DM narration voice/rules for the LLM.
 
 See `campaigns/necrotopia/ruleset/necrotopia/` for all four in ~150 lines of pure, import-free data.

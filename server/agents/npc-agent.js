@@ -7,9 +7,18 @@
  * The DM routes player input to an NPC agent; the NPC responds in-character.
  */
 
+import { z } from 'zod';
 import { buildNpcContext, npcMemoryFor } from '../../shared/context.js';
 import { look as senseLook } from '../sense.js';
 import { streamBeat } from './stream-beat.js';
+
+// Permissive: a real LLM's combat decision shape varies — coerce in combatDecide().
+const combatDecideSchema = z.object({
+  intent: z.any().optional(),
+  say: z.any().optional(),
+  move: z.any().optional(),
+  target: z.any().optional(),
+}).passthrough();
 
 // ---- Stream counter (module-level, shared with dm-agent) ----
 
@@ -97,5 +106,71 @@ export function createNpcAgent({ session, broadcast, applyAndBroadcast, llm }) {
     });
   }
 
-  return { respond };
+  /**
+   * C3: a morale-broken enemy decides what to do this turn (ONE LLM call). Returns a
+   * structured intent: 'fight' | 'flee' | 'surrender' | 'parley', with an optional
+   * in-voice `say` line. The engine maps the intent to ops (deterministic resolution).
+   *
+   * @param {string} npcId
+   * @param {string} summary — a combat-context summary (its HP, who's winning)
+   * @returns {Promise<{intent:string, say:string, move?:any, target?:any}>}
+   */
+  async function combatDecide(npcId, summary) {
+    const comps = session.entities.get(npcId);
+    if (!comps) return { intent: 'fight', say: '' };
+    const identity = comps.identity || {};
+    const persona = comps.persona || {};
+    const knowledge = comps.knowledge || { facts: [], secrets: [] };
+    const name = identity.name || npcId;
+
+    const system = [
+      `You ARE ${name}. You are an individual combatant in a fight that is going BADLY for you.`,
+      persona.personality ? `Personality: ${persona.personality}` : '',
+      persona.voice ? `Voice: ${persona.voice}` : '',
+      (knowledge.secrets || []).length ? `What you privately know/fear: ${(knowledge.secrets || []).join(' ')}` : '',
+      `Decide what you do THIS turn. Choose an intent:`,
+      `- "fight": keep attacking (you're not broken enough to quit)`,
+      `- "flee": break and run from the fight`,
+      `- "surrender": throw down and beg for your life`,
+      `- "parley": try to talk/deal your way out`,
+      `Respond JSON ONLY: {"intent":"fight|flee|surrender|parley","say":"<a SHORT line in your voice, or empty>"}.`,
+    ].filter(Boolean).join('\n');
+
+    const messages = [
+      { role: 'system', content: system },
+      { role: 'user', content: summary || 'You are badly wounded. What do you do?' },
+    ];
+
+    try {
+      const { parsed } = await llm.structured(messages, combatDecideSchema, {
+        user: process.env.TTRPG_SAVE || 'default',
+        role: 'combat-decide',
+      });
+      const intent = ['fight', 'flee', 'surrender', 'parley'].includes(String(parsed.intent))
+        ? String(parsed.intent) : 'fight';
+      return {
+        intent,
+        say: typeof parsed.say === 'string' ? parsed.say : '',
+        move: parsed.move,
+        target: parsed.target,
+      };
+    } catch (err) {
+      console.error('[npc-agent] combatDecide failed:', err.message);
+      return { intent: 'fight', say: '' };
+    }
+  }
+
+  /** Broadcast a one-off in-voice line for an NPC (used for morale beats). */
+  function say(npcId, text) {
+    if (!text) return;
+    const comps = session.entities.get(npcId) || {};
+    const identity = comps.identity || {};
+    const accent = (comps.agent || {}).accent || '#4a9eff';
+    applyAndBroadcast([{
+      op: 'event', name: 'dialogue',
+      data: { by: npcId, speaker: npcId, name: identity.name || npcId, accent, text, done: true },
+    }], 'npc');
+  }
+
+  return { respond, combatDecide, say };
 }

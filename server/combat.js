@@ -17,10 +17,11 @@
 
 import {
   buildEncounter, currentCombatant, resolveAttack, resolveMove, advanceTurn, outcome,
-  buildTimeline, advanceTimeline, projectQueue,
+  buildTimeline, advanceTimeline, projectQueue, enemyInstinct, moraleShaken, decisionToOps,
 } from '../shared/combat.js';
 import { expandOp, expandOps } from '../shared/effects.js';
 import { tickStatuses } from '../shared/statuses.js';
+import { resolveCheck, formatCheckResult } from '../shared/checks.js';
 import { findPc, pcLocationId, entitiesAt } from '../shared/space.js';
 
 const ATTACK_RE = /\b(attack|attacks?|hit|strike|stab|slash|swing|fight|kill|charge|shoot|punch|lunge|cut down|draw (?:my )?(?:sword|blade|steel|weapon))\b/i;
@@ -29,7 +30,7 @@ const FLEE_RE = /\b(flee|run away|run|escape|retreat|disengage|get away|leg it|w
 const ENCOUNTER_ID = 'encounter';
 const MAX_TURN_GUARD = 100; // safety against any pathological loop
 
-export function createCombatEngine({ session, broadcast, applyAndBroadcast, awardXp, rules }) {
+export function createCombatEngine({ session, broadcast, applyAndBroadcast, awardXp, rules, dmAgent, npcAgent }) {
   // Rules-as-data combat override (from the loaded ruleset bundle, or null → 5e default).
   const combatRules = rules || {};
 
@@ -221,6 +222,146 @@ export function createCombatEngine({ session, broadcast, applyAndBroadcast, awar
     return skip;
   }
 
+  // ---- C3: enemies as agents (instinct / morale / talk / improv) ----
+
+  const isAgentEnemy = (id) => !!((session.entities.get(id) || {}).agent || {}).enabled;
+
+  /** Broadcast an enemy social beat (morale/parley). */
+  function moraleEvent(id, intent, text) {
+    applyAndBroadcast([{
+      op: 'event', name: 'system',
+      data: { kind: intent === 'shaken' ? 'morale' : 'parley', text: text || `${nameOf(id)} ${intent}`, detail: { id, intent } },
+    }], 'combat');
+  }
+
+  /**
+   * After damage, mark agent-enemies whose HP fell below the morale threshold (or who
+   * are the last enemy standing) as `flags.morale='shaken'`. On their NEXT turn they
+   * wake the LLM (combatDecide) instead of running instinct.
+   */
+  function checkMorale() {
+    const enc = getEncounter();
+    if (!enc) return;
+    const threshold = combatRules.moraleThreshold ?? 0.34;
+    const livingEnemies = (enc.enemies || []).filter(isAlive);
+    for (const id of livingEnemies) {
+      if (!isAgentEnemy(id)) continue;
+      const comps = session.entities.get(id) || {};
+      if ((comps.flags || {}).morale === 'shaken') continue;
+      const lonely = livingEnemies.length === 1 && (enc.enemies || []).length > 1;
+      if (moraleShaken(comps, threshold, lonely)) {
+        applyOps([{ op: 'setFlag', id, key: 'morale', value: 'shaken' }]);
+        moraleEvent(id, 'shaken', `${nameOf(id)}'s nerve breaks — it falters!`);
+      }
+    }
+  }
+
+  /** A short combat-context summary for an enemy's morale decision. */
+  function encounterSummary(actorId) {
+    const enc = getEncounter();
+    const s = (session.entities.get(actorId) || {}).stats || {};
+    const foes = (enc.allies || []).filter(isAlive).map(nameOf).join(', ');
+    const allies = (enc.enemies || []).filter(id => isAlive(id) && id !== actorId).map(nameOf).join(', ') || 'none — you are the last one';
+    return `You (${nameOf(actorId)}) are at ${s.hp ?? '?'}/${s.maxHp ?? '?'} Health. Still-standing allies: ${allies}. Your enemies: ${foes}. The fight is going against you.`;
+  }
+
+  /** Remove a combatant from the active encounter (it fled/surrendered). */
+  function removeFromEncounter(id) {
+    const enc = getEncounter();
+    if (!enc) return;
+    writeEncounter({
+      ...enc,
+      enemies: (enc.enemies || []).filter(e => e !== id),
+      allies: (enc.allies || []).filter(a => a !== id),
+      participants: (enc.participants || []).filter(p => p.id !== id),
+      order: (enc.order || []).filter(o => o !== id),
+    });
+  }
+
+  /** Map a morale decision to ops (flee/surrender/parley leave the fight; fight = instinct). */
+  async function applyEnemyDecision(actorId, decided) {
+    const intent = decided.intent || 'fight';
+    if (decided.say && npcAgent && typeof npcAgent.say === 'function') npcAgent.say(actorId, decided.say);
+
+    if (intent === 'fight') {
+      runInstinct(actorId);
+      return;
+    }
+
+    // flee / surrender / parley → leave the encounter, drop hostility.
+    const { ops } = decisionToOps(actorId, intent);
+    applyOps(ops);
+    removeFromEncounter(actorId);
+    const verb = intent === 'flee' ? 'breaks and runs' : intent === 'surrender' ? 'throws down and surrenders' : 'pleads for parley';
+    moraleEvent(actorId, intent, `${nameOf(actorId)} ${verb}.`);
+  }
+
+  /** Deterministic enemy turn: instinct Move (or basic attack). Zero LLM. */
+  function runInstinct(actorId) {
+    const { move, targetId } = enemyInstinct(actorId, getEncounter(), session.entities, session.rng(), combatRules);
+    if (move) doMove(actorId, move, targetId, '');
+    else if (targetId) doAttack(actorId, targetId);
+  }
+
+  /**
+   * Enemy turn policy (C3): a morale-broken AGENT enemy wakes the LLM to decide
+   * (fight/flee/surrender/parley); everyone else runs deterministic instinct.
+   */
+  async function enemyAct(actorId) {
+    const comps = session.entities.get(actorId) || {};
+    const shaken = (comps.flags || {}).morale === 'shaken';
+    if (shaken && isAgentEnemy(actorId) && npcAgent && typeof npcAgent.combatDecide === 'function') {
+      const decided = await npcAgent.combatDecide(actorId, encounterSummary(actorId));
+      await applyEnemyDecision(actorId, decided);
+    } else {
+      runInstinct(actorId);
+    }
+    checkMorale();
+  }
+
+  /**
+   * Improvised player action (C3): off-menu combat text routed to the DM in a combat
+   * context → {checks, ops}. The ENGINE rolls the checks; ops apply on success only.
+   * The LLM only chose the shape — deterministic resolution underneath.
+   */
+  async function resolveImprov(actionOp) {
+    if (!dmAgent || typeof dmAgent.adjudicateCombat !== 'function') {
+      banner('turn', 'Nothing comes of it.');
+      return;
+    }
+    const enc = getEncounter();
+    const livingEnemies = (enc.enemies || []).filter(isAlive);
+    const ruling = await dmAgent.adjudicateCombat(actionOp, livingEnemies);
+
+    const pc = pcId();
+    const pcStats = (session.entities.get(pc) || {}).stats || {};
+    const proficiency = pcStats.proficiency || 2;
+
+    let success = true;
+    for (const c of (ruling.checks || [])) {
+      const result = resolveCheck(
+        { check: c.check || 'ability-check', ability: c.ability, skill: c.skill, dc: c.dc || 3, reason: c.reason || '' },
+        { stats: pcStats, proficiency },
+        session.rng(),
+      );
+      applyAndBroadcast([{
+        op: 'event', name: 'system',
+        data: { kind: 'roll', text: `✦ ${nameOf(pc)}: ${formatCheckResult(result)}`, detail: { success: result.success, rolls: result.rolls, total: result.total, dc: result.dc, reason: c.reason } },
+      }], 'combat');
+      if (!result.success) success = false;
+    }
+
+    if (success && (ruling.ops || []).length) {
+      applyOps(ruling.ops);
+      for (const o of ruling.ops) {
+        if (o.op === 'applyStatus') statusEvent(`${nameOf(o.id)} gains ${o.kind}${o.remaining ? ` (${o.remaining})` : ''}`, { target: o.id, kind: o.kind, remaining: o.remaining });
+        if (o.op === 'damage' && o.id && !isAlive(o.id)) banner('turn', `${nameOf(o.id)} falls!`);
+      }
+    } else if (!success) {
+      banner('turn', `${nameOf(pc)}'s improvised gambit fails.`);
+    }
+  }
+
   // ---- target selection ----
 
   /** Present, living, hostile NPCs at the PC's location. */
@@ -279,10 +420,9 @@ export function createCombatEngine({ session, broadcast, applyAndBroadcast, awar
         return; // the player acts
       }
 
-      // Enemy seat: act (basic attack in C1) unless stunned/dead.
+      // Enemy seat: morale-broken agents decide via the LLM; else deterministic instinct.
       if (isAlive(cur) && !skip) {
-        const target = (getEncounter().allies || []).find(isAlive);
-        if (target) doAttack(cur, target);
+        await enemyAct(cur);
       } else if (isAlive(cur) && skip) {
         banner('turn', `${nameOf(cur)} is stunned and can't act!`);
       }
@@ -402,17 +542,21 @@ export function createCombatEngine({ session, broadcast, applyAndBroadcast, awar
       }
     }
 
-    // Fallback: text/ATTACK_RE basic attack (back-compat; nothing breaks).
+    // Not a declared Move: a plain attack falls back to a basic strike; anything else
+    // off-menu ("I throw sand in its eyes") is an IMPROVISED action → DM adjudication.
     if (!acted) {
-      const target = (actionOp.target && isAlive(actionOp.target))
-        ? actionOp.target
-        : pickTarget(text, getEncounter().enemies);
-      if (target && pc) {
-        doAttack(pc, target);
+      if (ATTACK_RE.test(text)) {
+        const target = (actionOp.target && isAlive(actionOp.target))
+          ? actionOp.target
+          : pickTarget(text, getEncounter().enemies);
+        if (target && pc) doAttack(pc, target);
+        else banner('turn', 'There is no enemy left to strike.');
       } else {
-        banner('turn', 'There is no enemy left to strike.');
+        await resolveImprov(actionOp);
       }
     }
+
+    checkMorale();
 
     if (outcome(getEncounter(), session.entities) !== 'ongoing') {
       endEncounter(outcome(getEncounter(), session.entities));

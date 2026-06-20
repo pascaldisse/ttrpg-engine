@@ -79,7 +79,7 @@ const questEngine = createQuestEngine({ session, broadcast, applyAndBroadcast })
 // ---- Combat Engine (structured encounters; deterministic, no LLM) ----
 // Combat awards kill-XP through the quest engine's shared awardXp.
 
-const combat = createCombatEngine({ session, broadcast, applyAndBroadcast, awardXp: questEngine.awardXp, rules: rulesetCombat });
+const combat = createCombatEngine({ session, broadcast, applyAndBroadcast, awardXp: questEngine.awardXp, rules: rulesetCombat, dmAgent, npcAgent });
 
 // ---- Turn Engine ----
 

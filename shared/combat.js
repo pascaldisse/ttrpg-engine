@@ -439,6 +439,68 @@ export function projectQueue(encounter, entities, rules = {}, n = 8) {
 }
 
 /**
+ * Default enemy AI (C3): pick a Move + target deterministically (no LLM). Targets the
+ * living OPPONENT with the lowest hp (optionally exploiting a `rules.weaknesses` tag),
+ * and uses the actor's first affordable damage/area Move (else a basic attack).
+ * A ruleset may override wholesale via `rules.enemyInstinct`.
+ *
+ * @returns {{move:object|null, targetId:string|null}}
+ */
+export function enemyInstinct(actorId, encounter, entities, rng, rules = {}) {
+  if (typeof rules.enemyInstinct === 'function') {
+    return rules.enemyInstinct(actorId, encounter, entities, rng);
+  }
+
+  const enemies = encounter.enemies || [];
+  const allies = encounter.allies || [];
+  const actorIsEnemy = enemies.includes(actorId);
+  const opponents = (actorIsEnemy ? allies : enemies)
+    .filter(id => { const e = entities.get(id); return e && (e.status || {}).alive !== false; });
+
+  // Lowest-hp opponent (exploit weakness tag if the ruleset declares one).
+  let targetId = null, best = Infinity;
+  const weaknesses = rules.weaknesses || null;
+  for (const id of opponents) {
+    const e = entities.get(id) || {};
+    let hp = (e.stats || {}).hp ?? Infinity;
+    if (weaknesses && Array.isArray((e.flags || {}).tags)) {
+      if (e.flags.tags.some(t => weaknesses[t])) hp = -1; // prioritize the weak
+    }
+    if (hp < best) { best = hp; targetId = id; }
+  }
+
+  const moves = ((entities.get(actorId) || {}).moves || {}).list || [];
+  const move = moves.find(m => m.type === 'damage' || m.type === 'area') || null;
+  return { move, targetId };
+}
+
+/**
+ * Should this combatant's morale break? True when its HP ratio drops below the
+ * threshold OR it's the last one standing on its side. PURE.
+ */
+export function moraleShaken(entity, threshold = 0.34, lastStanding = false) {
+  const s = (entity && entity.stats) || {};
+  const ratio = s.maxHp ? (s.hp ?? 0) / s.maxHp : 1;
+  return ratio < threshold || lastStanding;
+}
+
+/**
+ * Map a morale decision intent to semantic ops + whether the actor leaves the fight.
+ * 'fight' → keep fighting (no ops); flee/surrender/parley → drop hostility and leave. PURE.
+ * @returns {{ops:object[], leaves:boolean}}
+ */
+export function decisionToOps(actorId, intent) {
+  if (intent === 'fight') return { ops: [], leaves: false };
+  return {
+    ops: [
+      { op: 'setFlag', id: actorId, key: 'hostile', value: false },
+      { op: 'setFlag', id: actorId, key: 'morale', value: 'broken' },
+    ],
+    leaves: true,
+  };
+}
+
+/**
  * Determine the outcome of the encounter.
  *
  * @param {object} encounter - encounter component value

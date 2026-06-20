@@ -64,6 +64,18 @@ Available semantic ops:
 
 Respond with JSON ONLY. No narration, no commentary.`;
 
+// ---- Combat improv adjudication prompt (C3 — off-menu combat actions) ----
+
+const COMBAT_ADJUDICATE_PROMPT = `You are the DM referee adjudicating an IMPROVISED combat action — something OFF the Move menu ("I throw sand in its eyes", "I kick the brazier over", "I shove it off the ledge"). The engine handles declared Moves; YOU only handle the creative one-off.
+
+Decide:
+1. What SINGLE check (if any) gates it? Request it: {check, dc, reason}. Use the ruleset's check kind. NEVER invent dice values — the engine rolls.
+2. What ops happen on SUCCESS? Prefer:
+   - {op:'applyStatus', id:<enemyId>, kind:'blind'|'stun'|'armor-break'|'bleed', magnitude?, remaining:<turns>} to debuff a foe
+   - {op:'damage', id:<enemyId>, amount:N} for direct harm
+   - {op:'spawnHazard', zoneId, kind, magnitude, remaining} to set a surface alight (C4)
+Only reference the living enemy ids listed. Respond JSON ONLY: {"checks":[...], "ops":[...]}.`;
+
 // ---- Canonize system prompt (canon-recorder voice; "narrate freely, canonize second") ----
 
 const CANONIZE_SYSTEM_PROMPT = `You are the DM's canon-recorder. You read the narration that was JUST delivered to the player and output the concrete world-state changes it ESTABLISHED, as semantic ops in JSON.
@@ -394,7 +406,38 @@ export function createDmAgent({ session, broadcast, applyAndBroadcast, llm, rule
     }
   }
 
-  return { narrate, route, adjudicate, narrateOutcome, canonize };
+  /**
+   * C3: adjudicate an IMPROVISED combat action (off the Move menu). Combat-aware
+   * variant of adjudicate — returns {checks, ops} only (no movement/speakTo). The
+   * engine rolls the checks and applies the ops on success.
+   *
+   * @param {object} actionOp — {op:'action', text}
+   * @param {string[]} enemyIds — living enemy ids the action may target
+   * @returns {Promise<{checks:object[], ops:object[]}>}
+   */
+  async function adjudicateCombat(actionOp, enemyIds) {
+    const actionText = actionOp.text || '';
+    const pcEntry = [...session.entities.entries()].find(([_id, c]) => (c.identity || {}).kind === 'pc');
+    const pcId = pcEntry ? pcEntry[0] : 'pc-hero';
+
+    const messages = [
+      { role: 'system', content: `${COMBAT_ADJUDICATE_PROMPT}\n\nLiving enemies: ${(enemyIds || []).join(', ') || '(none)'}\nThe PC id is "${pcId}".` },
+      { role: 'user', content: `Improvised combat action: "${actionText}"\n\nRespond JSON ONLY: {"checks":[{check,dc,reason}], "ops":[<applyStatus/damage/spawnHazard for the SUCCESS case>]}` },
+    ];
+
+    try {
+      const { parsed } = await llm.structured(messages, adjudicationSchema, { user: sessionId, role: 'combat-adjudicate' });
+      return {
+        checks: Array.isArray(parsed.checks) ? parsed.checks : [],
+        ops: Array.isArray(parsed.ops) ? parsed.ops : [],
+      };
+    } catch (err) {
+      console.error('[dm-agent] Combat adjudication failed:', err.message);
+      return { checks: [], ops: [] };
+    }
+  }
+
+  return { narrate, route, adjudicate, narrateOutcome, canonize, adjudicateCombat };
 }
 
 /** Build the adjudicate system prompt with dynamic scene/PC info injected. */

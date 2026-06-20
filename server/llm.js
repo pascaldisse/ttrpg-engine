@@ -253,6 +253,25 @@ export class MockLlmClient {
       return this.#mockCanonize(actionText);
     }
 
+    // ---- C3: improvised combat action → check + status/ops ----
+    if (opts.role === 'combat-adjudicate') {
+      const txt = (actionText || '').toLowerCase();
+      const idm = JSON.stringify(messages).match(/npc-[a-z0-9-]+/);
+      const target = idm ? idm[0] : 'npc-imp-1';
+      if (/sand|dirt|eyes|blind|grit/.test(txt)) {
+        return this.#jsonResult({ checks: [{ check: 'necro-test', dc: 1, reason: 'flinging grit in its eyes' }], ops: [{ op: 'applyStatus', id: target, kind: 'blind', remaining: 2 }] });
+      }
+      if (/trip|shove|knock|tackle/.test(txt)) {
+        return this.#jsonResult({ checks: [{ check: 'necro-test', dc: 1, reason: 'knocking it down' }], ops: [{ op: 'applyStatus', id: target, kind: 'stun', remaining: 1 }] });
+      }
+      return this.#jsonResult({ checks: [], ops: [] });
+    }
+
+    // ---- C3: morale-broken enemy decision ----
+    if (opts.role === 'combat-decide') {
+      return this.#jsonResult({ intent: 'flee', say: "This ain't worth dyin' for — I'm gone!" });
+    }
+
     // ---- P8: Worldgen branch (deterministic "charge with meaning") ----
     if (opts.role === 'worldgen') {
       return this.#mockWorldgen(messages);

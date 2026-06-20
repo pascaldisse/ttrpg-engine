@@ -127,6 +127,8 @@ export const statuses = {
   'flawless-aim': { doc: 'Flawless aim — attacks auto-hit (skip the hit roll).', tag: 'buff', modifyOutgoing: () => ({ autoHit: true }) },
   // Debuff: -1 effective Armor on the bearer (armor-break / acid).
   'armor-break': { doc: 'Armor break — -1 effective Armor on the bearer.', tag: 'debuff', modifyIncoming: () => ({ armorDelta: -1 }) },
+  // Debuff: the bearer is blinded — its attacks are far less likely to land (improv: sand in the eyes).
+  blind: { doc: 'Blind — the bearer\'s attacks suffer a steep hit penalty.', tag: 'debuff', modifyOutgoing: () => ({ hitDelta: -3 }) },
   // C2 timeline: haste doubles CTB speed (acts twice as often); slow halves it.
   haste: { doc: 'Haste — ×2 CTB speed (acts sooner / more often).', tag: 'buff', modifySpeed: (sp) => sp * 2 },
   slow: { doc: 'Slow — ×0.5 CTB speed (acts later / less often).', tag: 'debuff', modifySpeed: (sp) => sp * 0.5 },
