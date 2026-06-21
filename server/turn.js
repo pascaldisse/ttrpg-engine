@@ -284,11 +284,26 @@ export function createTurnEngine({ session, broadcast, applyAndBroadcast, dmAgen
     // 6. Narrate the outcome (grounded in the scene + the rolled results).
     const narrationText = await dmAgent.narrateOutcome(actionOp, checkResults, session._lookCache);
 
-    // 7. Canonize: distill what the narration established into ops.
-    const canonOps = await dmAgent.canonize(actionOp, narrationText, checkResults);
-    emitTrace({ agent: 'dm', phase: 'canonize', summary: `${(canonOps || []).length} consequence op(s)`, detail: canonOps || [] });
-    if (canonOps && canonOps.length > 0) {
+    // 7. VALIDATE (demoted canonize): distill incidental changes into ops AND catch any
+    // interactable actor the prose named that isn't grounded — the world-first backstop.
+    const canon = await dmAgent.canonize(actionOp, narrationText, checkResults);
+    const canonOps = (canon && canon.ops) || [];
+    emitTrace({ agent: 'dm', phase: 'canonize', summary: `${canonOps.length} consequence op(s)`, detail: canonOps });
+    if (canonOps.length > 0) {
       await applyConsequences(canonOps, session, applyAndBroadcast);
+    }
+
+    // Grounding backstop: spawn any ungrounded named actor so no pure-text character
+    // survives the turn. World-first should make this empty; a hit means RENDER strayed.
+    const ungrounded = (canon && canon.actors) || [];
+    if (ungrounded.length) {
+      const specs = ungrounded
+        .filter(a => a && typeof a === 'object' && a.name)
+        .map(a => ({ archetype: a.archetype ? String(a.archetype) : undefined, name: String(a.name), hostile: a.hostile === true || undefined }));
+      if (specs.length) {
+        emitTrace({ agent: 'dm', phase: 'grounding', summary: `backstop: spawning ${specs.length} ungrounded actor(s) the prose named`, detail: specs });
+        stageSpawns(specs, pcLocationId(session.entities));
+      }
     }
   }
 

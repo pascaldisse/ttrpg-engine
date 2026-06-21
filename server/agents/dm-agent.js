@@ -95,12 +95,19 @@ Rules:
 - If truly nothing concrete changed (pure talk or observation), return {"ops":[]}.
 - The player character's id is "<PC_ID>"; the world flags entity id is "world-state".
 
-Examples:
-- Scene has "**Brass Key** (item-key)"; Narration: "You pry the lockbox open and pocket the brass key inside." → {"ops":[{"op":"take","id":"<PC_ID>","item":{"id":"item-key","name":"Brass Key"}}]}
-- Narration: "The blade rakes your arm — a hot line of pain, blood welling." → {"ops":[{"op":"damage","id":"<PC_ID>","amount":5}]}
-- Narration: "She studies you warily but says nothing more." → {"ops":[]}
+GROUNDING BACKSTOP — "actors": if the narration NAMED an interactable character or creature
+(one the player could fight, talk to, or be threatened by) that is NOT in the Scene below, list it
+under "actors" so it becomes a real entity: [{"name":"<as named>","hostile":true|false,"archetype":"<closest archetype if obvious>"}].
+This should be RARE — the scene already contains everyone. Do NOT list ambient scenery, crowds,
+weather, distant sounds, or anyone already present. Only nameable, interactable individuals.
 
-Respond with JSON ONLY: {"ops":[...]}.`;
+Examples:
+- Scene has "**Brass Key** (item-key)"; Narration: "You pry the lockbox open and pocket the brass key inside." → {"ops":[{"op":"take","id":"<PC_ID>","item":{"id":"item-key","name":"Brass Key"}}],"actors":[]}
+- Narration: "The blade rakes your arm — a hot line of pain, blood welling." → {"ops":[{"op":"damage","id":"<PC_ID>","amount":5}],"actors":[]}
+- Scene lists no one named Mara; Narration: "A scarred raider named Mara steps from the wreck, blade drawn." → {"ops":[],"actors":[{"name":"Mara","hostile":true,"archetype":"drifter"}]}
+- Narration: "She studies you warily but says nothing more." → {"ops":[],"actors":[]}
+
+Respond with JSON ONLY: {"ops":[...],"actors":[...]}.`;
 
 // ---- Routing result schema ----
 
@@ -136,6 +143,9 @@ const adjudicationSchema = z.object({
 
 const canonizeSchema = z.object({
   ops: z.array(z.any()).default([]),
+  // D3 grounding backstop: interactable actors the prose NAMED that are not in the
+  // scene. Each becomes a real entity so no pure-text actor survives a turn.
+  actors: z.array(z.any()).default([]),
 });
 
 // ---- Stream counter (shared across agents) ----
@@ -372,7 +382,7 @@ export function createDmAgent({ session, broadcast, applyAndBroadcast, llm, rule
     const messages = [
       { role: 'system', content: systemPrompt },
       ...history,
-      { role: 'system', content: (lookText || '(scene unknown)') + checkText + '\n\nNarrate the outcome of the player\'s action, incorporating the check results above. Do NOT roll dice or reference rules — the dice are already rolled. Describe what HAPPENS in the fiction.' },
+      { role: 'system', content: (lookText || '(scene unknown)') + checkText + '\n\nNarrate the outcome of the player\'s action, incorporating the check results above. Do NOT roll dice or reference rules — the dice are already rolled. Describe what HAPPENS in the fiction.\n\nGROUNDING (critical): the scene above is the WHOLE cast. You may ONLY name NPCs, creatures, and objects that are listed there — any threat the moment needed has ALREADY been spawned and appears in the scene. Do NOT introduce a new named character or creature that is not listed; describe the present ones. Ambient scenery (weather, distant noise, unnamed crowds) is fine.' },
       { role: 'user', content: actionText },
     ];
 
@@ -398,7 +408,7 @@ export function createDmAgent({ session, broadcast, applyAndBroadcast, llm, rule
    * @param {object} actionOp — {op:'action', text, by}
    * @param {string} narrationText — the narration just streamed to the player
    * @param {object[]} checkResults — resolved check results (for context)
-   * @returns {Promise<object[]>} — semantic/canonical ops (unexpanded)
+   * @returns {Promise<{ops:object[], actors:object[]}>} — incidental ops + ungrounded actors
    */
   async function canonize(actionOp, narrationText, checkResults) {
     const actionText = actionOp.text || '';
@@ -419,7 +429,7 @@ export function createDmAgent({ session, broadcast, applyAndBroadcast, llm, rule
       { role: 'system', content: CANONIZE_SYSTEM_PROMPT.replaceAll('<PC_ID>', pcId) },
       {
         role: 'user',
-        content: `Scene (the entities that exist HERE — use these exact ids):\n${lookText}\n\nPlayer action: "${actionText}"${checkText}\n\nNarration just delivered to the player:\n"""\n${narrationText}\n"""\n\nOutput JSON {"ops":[...]} capturing ONLY the concrete state changes this narration established. If nothing concrete changed, return {"ops":[]}.`,
+        content: `Scene (the entities that exist HERE — use these exact ids):\n${lookText}\n\nPlayer action: "${actionText}"${checkText}\n\nNarration just delivered to the player:\n"""\n${narrationText}\n"""\n\nOutput JSON {"ops":[...],"actors":[...]} capturing the concrete state changes this narration established AND any interactable actor it named that is not in the Scene. If nothing concrete changed and no new actor was named, return {"ops":[],"actors":[]}.`,
       },
     ];
 
@@ -428,10 +438,13 @@ export function createDmAgent({ session, broadcast, applyAndBroadcast, llm, rule
         user: sessionId,
         role: 'canonize',
       });
-      return Array.isArray(parsed.ops) ? parsed.ops : [];
+      return {
+        ops: Array.isArray(parsed.ops) ? parsed.ops : [],
+        actors: Array.isArray(parsed.actors) ? parsed.actors : [],
+      };
     } catch (err) {
       console.error('[dm-agent] Canonize failed:', err.message);
-      return [];
+      return { ops: [], actors: [] };
     }
   }
 

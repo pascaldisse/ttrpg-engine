@@ -332,7 +332,14 @@ export class MockLlmClient {
   #mockCanonize(actionText) {
     const txt = (actionText || '').toLowerCase();
     if (/failure|→ miss|fumble|failed|misses/.test(txt)) {
-      return { parsed: { ops: [] }, raw: '{"ops":[]}', usage: { prompt_tokens: 60, completion_tokens: 5 } };
+      return { parsed: { ops: [], actors: [] }, raw: '{"ops":[],"actors":[]}', usage: { prompt_tokens: 60, completion_tokens: 5 } };
+    }
+    // D3 grounding backstop: prose that named an off-scene drifter → report it ungrounded
+    // so the engine spawns it (no pure-text actor survives a turn).
+    let actors = [];
+    if (/\bdrifter named (\w+)/.test(txt)) {
+      const name = txt.match(/\bdrifter named (\w+)/)[1];
+      actors = [{ name: name.charAt(0).toUpperCase() + name.slice(1), hostile: false, archetype: 'drifter' }];
     }
     let ops = [];
     if (txt.includes('attack') || txt.includes('strike') || txt.includes('swing')) {
@@ -347,7 +354,7 @@ export class MockLlmClient {
                txt.includes('box') || txt.includes('key')) {
       ops = [{ op: 'take', id: 'pc-hero', item: { id: 'item-key', name: 'Brass Key' } }];
     }
-    return { parsed: { ops }, raw: JSON.stringify({ ops }), usage: { prompt_tokens: 80, completion_tokens: 20 } };
+    return { parsed: { ops, actors }, raw: JSON.stringify({ ops, actors }), usage: { prompt_tokens: 80, completion_tokens: 20 } };
   }
 
   /**
