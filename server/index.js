@@ -320,6 +320,12 @@ wss.on('connection', (ws) => {
         turnEngine.setAutopilot(!!msg.value);
         return;
       }
+      // D5: a human DM (DMView) stages the next beat — spawns/checks/beginCombat — that
+      // the turn engine RESOLVEs exactly like an LLM ruling (same ops, same world-first).
+      if (msg.action === 'stage') {
+        turnEngine.injectDmRuling(msg.ruling || {});
+        return;
+      }
       // approve | reject | regenerate
       turnEngine.resolveProposal(msg.proposalId, msg.action)
         .catch(err => console.error('[dm-control] resolve error:', err.message));

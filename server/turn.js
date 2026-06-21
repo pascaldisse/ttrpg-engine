@@ -142,9 +142,10 @@ export function createTurnEngine({ session, broadcast, applyAndBroadcast, dmAgen
         }
       }
 
-      // 3. Adjudicate: structured LLM call (the DM's PROPOSED ruling for this action).
-      const ruling = await dmAgent.adjudicate(actionOp, presentNpcs);
-      emitTrace({ agent: 'dm', phase: 'adjudicate', summary: summarizeRuling(ruling, actionText), detail: ruling });
+      // 3. Produce the DM's PROPOSED ruling through the seat-controller indirection
+      //    (D5): a human/DMView injection wins; otherwise the 'ai' responder (LLM).
+      const { ruling, source } = await produceRuling(actionOp, presentNpcs);
+      emitTrace({ agent: 'dm', phase: 'adjudicate', by: source, summary: `${source === 'ai' ? '' : `(${source}) `}${summarizeRuling(ruling, actionText)}`, detail: ruling });
 
       // 3.1 GATE (DMView Slice 2): when paused (autopilot off), don't execute the ruling —
       //     stage it as a proposal for the DM to approve / reject / regenerate. The
@@ -334,6 +335,47 @@ export function createTurnEngine({ session, broadcast, applyAndBroadcast, dmAgen
     applyAndBroadcast([{ op: 'merge', id: 'dm-control', component: 'dmControl', value: { autopilot: !!on } }], 'dm');
   }
 
+  // ---- DM seat-controller indirection (D5; DESIGN-NOTES #1) ----
+  //
+  // "Produce a ruling for the DM seat" is dispatched through a responder lookup, not a
+  // hardcoded LLM call. Today it resolves to the LLM ('ai') OR a human/DMView injection;
+  // both emit the SAME ruling shape, so the DM can be AI, human, or both interchangeably
+  // without the RESOLVE path caring who authored the beat.
+
+  /** The empty ruling skeleton every source fills in (LLM coercion or human inject). */
+  function defaultRuling() {
+    return { speakTo: null, move: null, note: '', checks: [], ops: [], spawns: [], beginCombat: false };
+  }
+
+  /** The DM seat's controller: 'ai' (LLM) by default, or a clientId when a human holds it. */
+  function dmSeatController() {
+    const ctrl = session.entities.get('dm-control');
+    return (ctrl && ctrl.dmControl && ctrl.dmControl.controller) || 'ai';
+  }
+
+  // A human/DMView (or both) supplies the next DM ruling. Queued for the next player
+  // action; a queued human beat takes precedence over the LLM (co-drive: human wins).
+  let pendingDmRuling = null;
+  function injectDmRuling(ruling) {
+    pendingDmRuling = { ...defaultRuling(), ...(ruling || {}) };
+  }
+
+  /**
+   * Produce the DM's ruling for this action via the seat indirection: a queued human
+   * ruling wins; else the 'ai' responder (the LLM) produces it. Same shape either way.
+   * @returns {Promise<{ruling:object, source:string}>}
+   */
+  async function produceRuling(actionOp, presentNpcs) {
+    if (pendingDmRuling) {
+      const ruling = pendingDmRuling;
+      pendingDmRuling = null;
+      const ctrl = dmSeatController();
+      return { ruling, source: ctrl === 'ai' ? 'injected' : ctrl };
+    }
+    const ruling = await dmAgent.adjudicate(actionOp, presentNpcs);
+    return { ruling, source: 'ai' };
+  }
+
   /** One-line human summary of a ruling for the proposal card. */
   function summarizeRuling(ruling, actionText) {
     if (ruling.move && ruling.move.to) return `Move the party → ${ruling.move.to}`;
@@ -408,7 +450,7 @@ export function createTurnEngine({ session, broadcast, applyAndBroadcast, dmAgen
     }
   }
 
-  return { runTurn, isPaused, setAutopilot, resolveProposal, listProposals };
+  return { runTurn, isPaused, setAutopilot, resolveProposal, listProposals, injectDmRuling };
 }
 
 /**
