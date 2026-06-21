@@ -298,6 +298,49 @@ function necroResolveMove(move, { actorId, targetId }, entities, rng, mods = {})
   return { ops: [{ op: 'damage', id: targetId, amount: dmg }], statusOps: [], summary: `${move.name}: ${shown} vs Armor ${h.armor} → HIT (${dmg} damage)`, detail: { hit: true, damage: dmg } };
 }
 
+// ---- Actor templates (DM world-first spawning — shared/staging.js consumes this) ----
+//
+// The DM may only narrate creatures it has SPAWNED. Each template is the stat block
+// the engine stamps when the DM stages an archetype — so the LLM names "groomsman"
+// and the ENGINE supplies the Health/Armor/Moves/dice. `faction` sets the default
+// allegiance; `_default` catches any archetype the DM invents off-list.
+export const actorTemplates = {
+  imp: {
+    name: 'Snarling Imp', faction: 'hostile', accent: '#a64dff',
+    description: 'A knee-high devil the color of a bruise, all teeth and claws.',
+    stats: { hp: 4, maxHp: 4, armor: 2, level: 1, xp: 10 },
+    moves: { list: [{ name: 'Claw', type: 'damage', damage: '1d3', cost: 1, special: 'Rake with filthy claws.' }] },
+    persona: { personality: 'Vicious, gleeful, dumb. Attacks the nearest warm thing.', voice: 'High, scratchy — taunts in broken English.' },
+  },
+  groomsman: {
+    name: 'Tuxedoed Groomsman', faction: 'hostile', accent: '#c94f4f',
+    description: 'A wedding guest gone wrong — torn tux, black-veined eyes, moving in wrong little jerks.',
+    stats: { hp: 6, maxHp: 6, armor: 2, level: 1, xp: 15 },
+    moves: { list: [{ name: 'Clawing Lunge', type: 'damage', damage: '1d6', cost: 1, special: 'Rakes with broken-nailed fingers.' }] },
+    persona: { personality: 'Silent, twitching, relentless. A guest who never got to sit down.', voice: 'Wet clicking; no words left.' },
+  },
+  preacher: {
+    name: 'Shotgun Preacher', faction: 'hostile', accent: '#e0b341',
+    description: 'A false officiant in a half-burned jumpsuit, a pump shotgun where a hymnal should be.',
+    stats: { hp: 14, maxHp: 14, armor: 3, level: 2, xp: 40 },
+    moves: { list: [{ name: 'Shotgun Blast', type: 'damage', damage: '2d6', cost: 2, special: 'A deafening point-blank roar.' }] },
+    persona: { personality: 'Loud, fervent, certain the end is a sermon he gets to deliver.', voice: 'Vegas-lounge fire-and-brimstone.' },
+  },
+  drifter: {
+    name: 'Wasteland Drifter', faction: 'neutral', accent: '#8a9a5b',
+    description: 'A sun-cured survivor with wary eyes and a length of rebar for company.',
+    stats: { hp: 8, maxHp: 8, armor: 2, level: 1, xp: 20 },
+    moves: { list: [{ name: 'Rebar Swing', type: 'damage', damage: '1d6', cost: 1, special: 'A rusty arc of metal.' }] },
+    persona: { personality: 'Cautious, transactional, not looking for a fight but ready for one.', voice: 'Low, clipped, economical.' },
+  },
+  _default: {
+    name: 'Stranger', faction: 'neutral', accent: '#9a9a9a',
+    description: 'A figure the apocalypse coughed up — unremarkable until it isn\'t.',
+    stats: { hp: 5, maxHp: 5, armor: 2, level: 1, xp: 10 },
+    moves: { list: [{ name: 'Desperate Strike', type: 'damage', damage: '1d3', cost: 1, special: 'A clumsy, frightened blow.' }] },
+  },
+};
+
 export const combat = {
   // C2: CTB timeline — no initiative roll; turn order is speed-driven (FFX-style).
   initiativeMode: 'timeline',

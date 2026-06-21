@@ -61,5 +61,6 @@ export async function loadRuleset(id, worldDir) {
     checks: mod.checks || {},
     statuses: mod.statuses || {},
     combat: mod.combat || null,
+    actorTemplates: mod.actorTemplates || null,
   };
 }
