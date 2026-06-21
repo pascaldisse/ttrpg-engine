@@ -128,6 +128,8 @@ const adjudicationSchema = z.object({
   move: z.any().optional(),
   checks: z.any().optional(),
   ops: z.any().optional(),
+  spawns: z.any().optional(),     // D2: world-first actor staging
+  beginCombat: z.any().optional(),// D2/D4: DM-initiated combat
 }).passthrough();
 
 // ---- Canonize result schema (P3.1) ----
@@ -150,11 +152,16 @@ let streamCounter = 0;
  * @param {object} params.llm — LlmClient
  * @returns {{narrate, route, adjudicate, narrateOutcome}}
  */
-export function createDmAgent({ session, broadcast, applyAndBroadcast, llm, rulesetPrompt }) {
+export function createDmAgent({ session, broadcast, applyAndBroadcast, llm, rulesetPrompt, actorTemplates }) {
   // The DM narration voice comes from the loaded ruleset (P7) when present,
   // else the built-in 5e default. Rules-as-data: the engine names no ruleset.
   const systemPrompt = rulesetPrompt || DM_SYSTEM_PROMPT;
   const sessionId = process.env.TTRPG_SAVE || 'default';
+  // Archetypes the DM may spawn (world-first). Empty when the ruleset ships no
+  // actorTemplates → the DM keeps no spawn power (5e/DSA unaffected).
+  const spawnArchetypes = actorTemplates
+    ? Object.keys(actorTemplates).filter((k) => k !== '_default')
+    : [];
 
   /**
    * DM world-voice narration (P1-P2 fallback; used for ambient/look actions).
@@ -252,14 +259,17 @@ export function createDmAgent({ session, broadcast, applyAndBroadcast, llm, rule
     // Location-scoped scene frame (lists present NPCs/items + exits the player may use).
     const lookText = session._lookCache || senseLook(session);
 
+    const stageField = spawnArchetypes.length
+      ? ', "spawns":[{archetype,name?,hostile?,ally?,count?}], "beginCombat":<true if this starts a fight>'
+      : '';
     const messages = [
       {
         role: 'system',
-        content: adjudicatePrompt()(npcList, pcId, pcName, pcStats, lookText),
+        content: adjudicatePrompt(spawnArchetypes)(npcList, pcId, pcName, pcStats, lookText),
       },
       {
         role: 'user',
-        content: `Player action: "${actionText}"\n\nRespond with JSON ONLY: {"speakTo":<npcId|null>, "move":{"to":"<locationId>"}|null, "note":"<director note for NPC if speaking>", "checks":[{ability,skill?,dc,reason}], "ops":[<semantic ops for SUCCESS case>]}`,
+        content: `Player action: "${actionText}"\n\nRespond with JSON ONLY: {"speakTo":<npcId|null>, "move":{"to":"<locationId>"}|null, "note":"<director note for NPC if speaking>", "checks":[{ability,skill?,dc,reason}], "ops":[<semantic ops for SUCCESS case>]${stageField}}`,
       },
     ];
 
@@ -270,7 +280,7 @@ export function createDmAgent({ session, broadcast, applyAndBroadcast, llm, rule
       });
 
       // Coerce every field here so a slightly-off shape never silently drops the ruling.
-      const ruling = { speakTo: null, move: null, note: '', checks: [], ops: [] };
+      const ruling = { speakTo: null, move: null, note: '', checks: [], ops: [], spawns: [], beginCombat: false };
 
       // speakTo → a present agent-NPC id, else null
       if (typeof parsed.speakTo === 'string' && parsed.speakTo.trim()) {
@@ -290,6 +300,25 @@ export function createDmAgent({ session, broadcast, applyAndBroadcast, llm, rule
 
       if (typeof parsed.note === 'string') ruling.note = parsed.note;
       if (Array.isArray(parsed.ops)) ruling.ops = parsed.ops;
+
+      // D2: spawns[] — only honored when the ruleset grants spawn power. Each entry is
+      // expanded count× and normalized; malformed entries are dropped, never thrown.
+      if (spawnArchetypes.length && Array.isArray(parsed.spawns)) {
+        const out = [];
+        for (const s of parsed.spawns) {
+          if (!s || typeof s !== 'object') continue;
+          const n = Math.max(1, Math.min(8, Math.round(Number(s.count) || 1)));
+          const spec = {
+            archetype: s.archetype ? String(s.archetype) : undefined,
+            name: s.name ? String(s.name) : undefined,
+            hostile: s.hostile === true || undefined,
+            ally: s.ally === true || undefined,
+          };
+          for (let i = 0; i < n; i++) out.push({ ...spec });
+        }
+        ruling.spawns = out;
+      }
+      ruling.beginCombat = parsed.beginCombat === true;
 
       // checks → clamped, defaulted check requests (drops malformed entries, never throws)
       const rawChecks = Array.isArray(parsed.checks) ? parsed.checks : [];
@@ -448,8 +477,21 @@ export function createDmAgent({ session, broadcast, applyAndBroadcast, llm, rule
 }
 
 /** Build the adjudicate system prompt with dynamic scene/PC info injected. */
-function adjudicatePrompt() {
+function adjudicatePrompt(archetypes) {
   const base = ADJUDICATE_SYSTEM_PROMPT;
+  // World-first staging: the DM may only narrate creatures it has SPAWNED. This
+  // block is added only when the ruleset ships actorTemplates (else no spawn power).
+  const stage = (archetypes && archetypes.length)
+    ? `\n\n## STAGE THE WORLD BEFORE YOU NARRATE (critical)
+Narration is a VIEW of the world — it can never invent. If your outcome involves any
+NPC, creature, or threat that is NOT already listed in the Scene, you MUST stage it now
+so it becomes a real entity before it is described:
+- "spawns": [{ "archetype": <one of: ${archetypes.join(', ')}>, "name"?: "<specific name>",
+  "hostile"?: true, "ally"?: true, "count"?: <n, default 1> }]
+  The ENGINE supplies its stats/dice — you only pick the archetype and intent.
+- To START A FIGHT, set "beginCombat": true AND spawn the hostiles in "spawns".
+NEVER mention a character in narration that you did not spawn or that isn't in the Scene.`
+    : '';
   return (npcList, pcId, pcName, pcStats, lookText) =>
-    base + `\n\n## Scene (only these entities exist HERE)\n${lookText || '(scene unknown)'}\n\nNPCs you may route to:\n${npcList || '(none)'}\n\n## The PC\nID: "${pcId || 'unknown'}"\nName: ${pcName}\nStats: ${pcStats}\nWorld-state id: "world-state"`;
+    base + stage + `\n\n## Scene (only these entities exist HERE)\n${lookText || '(scene unknown)'}\n\nNPCs you may route to:\n${npcList || '(none)'}\n\n## The PC\nID: "${pcId || 'unknown'}"\nName: ${pcName}\nStats: ${pcStats}\nWorld-state id: "world-state"`;
 }

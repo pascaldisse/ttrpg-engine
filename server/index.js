@@ -35,12 +35,14 @@ const TTRPG_SAVE = process.env.TTRPG_SAVE || 'default';
 const TTRPG_RULESET = process.env.TTRPG_RULESET || null;
 let rulesetPrompt = null;
 let rulesetCombat = null;
+let rulesetActorTemplates = null;
 if (TTRPG_RULESET) {
   try {
     const rs = await loadRuleset(TTRPG_RULESET, TTRPG_WORLD);
     rulesetPrompt = rs.systemPrompt || null;
     rulesetCombat = rs.combat || null;
-    console.log(`[ruleset] Loaded "${(rs.meta && rs.meta.name) || TTRPG_RULESET}" (${(rs.meta && rs.meta.dice) || '?'})${rulesetCombat ? ' +combat' : ''}`);
+    rulesetActorTemplates = rs.actorTemplates || null;
+    console.log(`[ruleset] Loaded "${(rs.meta && rs.meta.name) || TTRPG_RULESET}" (${(rs.meta && rs.meta.dice) || '?'})${rulesetCombat ? ' +combat' : ''}${rulesetActorTemplates ? ' +spawn' : ''}`);
   } catch (e) {
     console.error(`[ruleset] Failed to load "${TTRPG_RULESET}": ${e.message} — using built-in 5e defaults.`);
   }
@@ -69,7 +71,7 @@ const llm = createLlmClient();
 
 // ---- Agents ----
 
-const dmAgent = createDmAgent({ session, broadcast, applyAndBroadcast, llm, rulesetPrompt });
+const dmAgent = createDmAgent({ session, broadcast, applyAndBroadcast, llm, rulesetPrompt, actorTemplates: rulesetActorTemplates });
 const npcAgent = createNpcAgent({ session, broadcast, applyAndBroadcast, llm });
 
 // ---- Quest + progression engine (deterministic, no LLM) ----
@@ -83,7 +85,7 @@ const combat = createCombatEngine({ session, broadcast, applyAndBroadcast, award
 
 // ---- Turn Engine ----
 
-const turnEngine = createTurnEngine({ session, broadcast, applyAndBroadcast, dmAgent, npcAgent, combat, questEngine });
+const turnEngine = createTurnEngine({ session, broadcast, applyAndBroadcast, dmAgent, npcAgent, combat, questEngine, actorTemplates: rulesetActorTemplates });
 
 /**
  * After applying a batch of ops, fire the turn engine for any action ops.

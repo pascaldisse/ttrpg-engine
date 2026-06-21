@@ -19,6 +19,7 @@ import { resolveCheck, formatCheckResult } from '../shared/checks.js';
 import { expandOp } from '../shared/effects.js';
 import { validateOp } from '../shared/ops.js';
 import { resolveExit, isConnected, pcLocationId } from '../shared/space.js';
+import { resolveActorSpawn } from '../shared/staging.js';
 
 /**
  * Movement-intent gate for the deterministic fast-path. The text must READ like
@@ -41,7 +42,7 @@ export const MOVE_INTENT_RE = /^\s*(?:(?:i(?:'d| would)?\s+(?:like|want|wish|lov
  * @param {object} params.npcAgent
  * @returns {{runTurn: (actionOp:object) => Promise<void>}}
  */
-export function createTurnEngine({ session, broadcast, applyAndBroadcast, dmAgent, npcAgent, combat, questEngine }) {
+export function createTurnEngine({ session, broadcast, applyAndBroadcast, dmAgent, npcAgent, combat, questEngine, actorTemplates }) {
   /**
    * Move the PC to a connected location, then narrate the arrival.
    * The move itself is engine-applied (deterministic, already canon) so we do
@@ -181,6 +182,32 @@ export function createTurnEngine({ session, broadcast, applyAndBroadcast, dmAgen
    * @param {object} actionOp
    * @param {object} ruling — from dmAgent.adjudicate()
    */
+  /**
+   * Spawn each staged actor into the world (world-first). Returns the new ids.
+   * Gated on the ruleset shipping actorTemplates; spec.place defaults to the PC's
+   * location so spawns land where the player is. Applied individually so each
+   * subsequent unique-id check sees the prior spawn.
+   * @param {object[]} spawns — normalized specs from the ruling
+   * @param {string|null} here — the PC's current location id
+   * @returns {string[]}
+   */
+  function stageSpawns(spawns, here) {
+    if (!actorTemplates || !Array.isArray(spawns) || !spawns.length) return [];
+    const ids = [];
+    for (const spec of spawns) {
+      const spawnOp = resolveActorSpawn({ ...spec, place: spec.place || here }, actorTemplates, session.entities);
+      if (!spawnOp) continue;
+      applyAndBroadcast([spawnOp], 'dm');
+      ids.push(spawnOp.id);
+      emitTrace({
+        agent: 'dm', phase: 'stage',
+        summary: `spawned ${spawnOp.components.identity.name}${spawnOp.components.flags && spawnOp.components.flags.hostile ? ' (hostile)' : ''} → ${spawnOp.id}`,
+        detail: spawnOp,
+      });
+    }
+    return ids;
+  }
+
   async function executeRuling(actionOp, ruling) {
     const actionText = (actionOp.text || '').trim();
 
@@ -213,6 +240,12 @@ export function createTurnEngine({ session, broadcast, applyAndBroadcast, dmAgen
       await npcAgent.respond(ruling.speakTo, actionText, ruling.note || '');
       return;
     }
+
+    // 4.5 STAGE → RESOLVE (world-first): any actor the DM is about to narrate is
+    // spawned into the world NOW, before the prose describes it. Applied one at a
+    // time so ids stay unique; the scene frame is refreshed so RENDER sees them.
+    const spawnedIds = stageSpawns(ruling.spawns, here);
+    if (spawnedIds.length) session._lookCache = senseLook(session);
 
     // 5. World action: resolve checks via ENGINE
     const checkResults = [];
@@ -280,6 +313,8 @@ export function createTurnEngine({ session, broadcast, applyAndBroadcast, dmAgen
     if (ruling.move && ruling.move.to) return `Move the party → ${ruling.move.to}`;
     if (ruling.speakTo) return `${ruling.speakTo} answers the player`;
     const parts = [];
+    if (ruling.spawns && ruling.spawns.length) parts.push(`spawn ${ruling.spawns.length} actor(s)`);
+    if (ruling.beginCombat) parts.push('begin combat');
     if (ruling.checks && ruling.checks.length) {
       parts.push('roll ' + ruling.checks.map(c => `${c.ability || '?'}${c.skill ? '/' + c.skill : ''} DC${c.dc || '?'}`).join(', '));
     }

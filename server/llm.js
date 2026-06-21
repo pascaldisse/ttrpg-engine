@@ -396,6 +396,18 @@ export class MockLlmClient {
   #mockAdjudicate(actionText, messages) {
     const txt = (actionText || '').toLowerCase();
 
+    // ---- D2/D4: world-first fight staging ----
+    // Only when the prompt advertises spawn power (ruleset ships actorTemplates) AND
+    // the action reads like starting a fight from nothing → spawn hostiles + open combat.
+    const canSpawn = /STAGE THE WORLD/.test(JSON.stringify(messages));
+    if (canSpawn && /\b(initiate|start|pick|begin)\b[^.]*\bfight\b|spoiling for a fight|fight\b[^.]*\b(everyone|them all)\b/.test(txt)) {
+      return this.#jsonResult({
+        speakTo: null, checks: [], ops: [],
+        spawns: [{ archetype: 'groomsman', hostile: true, count: 3 }],
+        beginCombat: true,
+      });
+    }
+
     // ---- Action checks (before conversation routing) ----
 
     // Attack keywords
