@@ -281,6 +281,17 @@ export function createTurnEngine({ session, broadcast, applyAndBroadcast, dmAgen
       }], 'system');
     }
 
+    // 5.5 DM-initiated combat (world-first): the DM staged the hostiles above and asked
+    // to open the floor. Hand off to the same combat path a player attack uses; if it
+    // starts, combat owns the start banner + flavor — skip the generic RENDER/VALIDATE.
+    if (ruling.beginCombat && combat && typeof combat.beginEncounter === 'function') {
+      const started = await combat.beginEncounter(actionOp);
+      if (started) {
+        emitTrace({ agent: 'dm', phase: 'begin-combat', summary: 'DM opened the floor with the staged hostiles', detail: { spawned: spawnedIds } });
+        return;
+      }
+    }
+
     // 6. Narrate the outcome (grounded in the scene + the rolled results).
     const narrationText = await dmAgent.narrateOutcome(actionOp, checkResults, session._lookCache);
 

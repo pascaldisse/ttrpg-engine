@@ -791,5 +791,23 @@ export function createCombatEngine({ session, broadcast, applyAndBroadcast, awar
     await runUntilPlayerTurn();
   }
 
-  return { inCombat, detectInitiation, startAndResolve, handlePlayerAction };
+  /**
+   * D4: DM-initiated combat. Open the floor with whoever is present and hostile —
+   * no player attack-text required (the DM staged the threat). Reuses the same
+   * timeline/initiative + zone setup as a player-triggered fight.
+   * @param {object} actionOp — the originating action (drives the player's first turn)
+   * @returns {Promise<boolean>} — true iff an encounter started
+   */
+  async function beginEncounter(actionOp = { text: '' }) {
+    if (inCombat()) return false;
+    const enemies = presentHostiles();
+    if (enemies.length === 0) return false;
+    const pc = pcId();
+    if (!pc) return false;
+    const allies = [pc, ...presentAllies()];
+    await startAndResolve(actionOp, { targetId: enemies[0], enemies, allies });
+    return true;
+  }
+
+  return { inCombat, detectInitiation, startAndResolve, handlePlayerAction, beginEncounter };
 }
