@@ -14,6 +14,7 @@
  */
 
 import { el, clear } from './dom.js';
+import { WorldView } from './worldview.js';
 
 export class View {
   /**
@@ -42,6 +43,9 @@ export class View {
 
     // Set by main.js — clicking a present NPC / item / exit sends an action.
     this.onAction = null;
+
+    // The walkable world (canvas). Lazy — created on first tile-bearing scene.
+    this.worldview = null;
 
     // Subscribe to store
     store.onChange((event) => this.handle(event));
@@ -979,6 +983,20 @@ export class View {
     const locId = (pc.place || {}).locationId || null;
     const loc = locId ? this.store.entities.get(locId) : null;
 
+    // The world clock (P4): day + phase, always in view.
+    const ws = this.store.entities.get('world-state');
+    if (ws && ws.clock) {
+      const icons = { morning: '🌅', afternoon: '☀️', evening: '🌇', night: '🌙' };
+      this._playerHudEl.appendChild(
+        el('div', { className: 'px-3 py-1.5 bg-gray-800 rounded border border-gray-700 text-xs text-gray-300 flex items-center gap-2' }, [
+          el('span', {}, [icons[ws.clock.phase] || '🕰']),
+          el('span', { className: 'text-amber-200/90' }, [`Day ${ws.clock.day}`]),
+          el('span', { className: 'text-gray-500' }, ['·']),
+          el('span', { className: 'capitalize' }, [ws.clock.phase || 'morning']),
+        ]),
+      );
+    }
+
     // Every party member at a glance; my own sheet expanded.
     for (const [id, comps] of this._findPcs()) {
       this._playerHudEl.appendChild(this._renderYouCard(comps, id === pcId));
@@ -1142,22 +1160,61 @@ export class View {
     const locId = pcPair ? (pcPair[1].place || {}).locationId : null;
     const loc = locId ? this.store.entities.get(locId) : null;
 
-    clear(this.sceneAreaEl);
     if (!loc) {
+      clear(this.sceneAreaEl);
       this.sceneAreaEl.className = 'bg-gray-900 rounded-lg border border-gray-700 flex items-center justify-center min-h-[200px]';
       this.sceneAreaEl.appendChild(el('span', { className: 'text-gray-600 text-sm' }, ['[ scene ]']));
       return;
     }
 
     const id = loc.identity || {};
+    const port = typeof __TTRPG_PORT__ !== 'undefined' ? __TTRPG_PORT__ : '8420';
+    const serverBase = `http://${location.hostname}:${port}`;
+
+    // THE WALKABLE WORLD: locations with a tile grid render as a live canvas —
+    // point-click walking, exits travel, enemies hand off into combat. The
+    // worldview persists across store re-renders (same location ⇒ same canvas,
+    // the avatar keeps walking).
+    if (loc.tiles && this.onAction) {
+      if (!this.worldview) {
+        this.worldview = new WorldView({
+          store: this.store,
+          onAction: (text, move, target, zone) => this.onAction(text, move, target, zone),
+          serverBase,
+        });
+      }
+      const samePlace = this.worldview.locId === locId &&
+        this.worldview.wrap && this.worldview.wrap.parentElement === this.sceneAreaEl;
+      if (samePlace) {
+        this.worldview.mount(this.sceneAreaEl, locId, pcPair[0]); // token refresh only
+        return;
+      }
+      clear(this.sceneAreaEl);
+      this.sceneAreaEl.className = 'bg-gray-900 rounded-lg border border-gray-700 p-3 min-h-[200px] overflow-y-auto flex flex-col';
+      // The painted scene stays as a slim atmosphere banner above the map.
+      if ((loc.art || {}).prompt) {
+        const frame = el('div', { className: 'rounded overflow-hidden border border-gray-800 mb-2 bg-gray-800/40' }, []);
+        const img = el('img', {
+          src: `${serverBase}/art/${encodeURIComponent(locId)}`,
+          alt: id.name || 'scene',
+          className: 'w-full max-h-24 object-cover block opacity-90',
+        });
+        img.onerror = () => frame.remove();
+        frame.appendChild(img);
+        this.sceneAreaEl.appendChild(frame);
+      }
+      if (this.worldview.mount(this.sceneAreaEl, locId, pcPair[0])) return;
+      // fall through to the prose scene if mounting failed
+    }
+
+    clear(this.sceneAreaEl);
     this.sceneAreaEl.className = 'bg-gray-900 rounded-lg border border-gray-700 p-5 min-h-[200px] overflow-y-auto flex flex-col';
     // Scene art from the server's art engine (GET /art/<locId>, cache-first;
     // 404 = no art.prompt on this location → the frame simply hides itself).
     if ((loc.art || {}).prompt) {
-      const port = typeof __TTRPG_PORT__ !== 'undefined' ? __TTRPG_PORT__ : '8420';
       const frame = el('div', { className: 'rounded overflow-hidden border border-gray-800 mb-4 bg-gray-800/40' }, []);
       const img = el('img', {
-        src: `http://${location.hostname}:${port}/art/${encodeURIComponent(locId)}`,
+        src: `${serverBase}/art/${encodeURIComponent(locId)}`,
         alt: id.name || 'scene',
         className: 'w-full max-h-72 object-cover block',
       });

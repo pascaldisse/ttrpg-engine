@@ -252,6 +252,25 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
+    // GET /art/tile/<tag> — a tile texture of the AI-painted default tileset.
+    if (req.method === 'GET' && url.pathname.startsWith('/art/tile/')) {
+      const tag = decodeURIComponent(url.pathname.slice('/art/tile/'.length));
+      const tile = await artEngine.tileFor(tag);
+      if (!tile) {
+        res.writeHead(404, { 'Access-Control-Allow-Origin': '*' });
+        res.end();
+        return;
+      }
+      res.writeHead(200, {
+        'Content-Type': tile.mime,
+        // Mock tiles must not shadow the real skin after a provider switch.
+        'Cache-Control': artEngine.provider === 'mock' ? 'no-store' : 'public, max-age=604800',
+        'Access-Control-Allow-Origin': '*',
+      });
+      res.end(tile.bytes);
+      return;
+    }
+
     // GET /art/<entityId> — the entity's art.prompt rendered (cache-first).
     if (req.method === 'GET' && url.pathname.startsWith('/art/')) {
       const entityId = decodeURIComponent(url.pathname.slice('/art/'.length));

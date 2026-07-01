@@ -125,11 +125,43 @@ export const SCHEMA = {
       image: { doc: 'Cached image URL or data-uri (or null).' },
     },
   },
+  tiles: {
+    doc: 'Walkable tile map of a LOCATION — semantic tags rendered through a swappable tileset skin. Generated deterministically (worldgen or boot backfill); authored grids win. Presentation + traversal only: combat stays zone-based.',
+    default: null,
+    fields: {
+      w: { doc: 'Grid width in tiles.' },
+      h: { doc: 'Grid height in tiles.' },
+      rows: { doc: 'Array of h strings of w chars; legend maps each char to a semantic tag.' },
+      legend: { doc: 'Char → semantic tag (floor/wall/water/tree/road/…). Tilesets bind to tags.' },
+      exits: { doc: 'Array of {x, y, targetId} — stepping here travels to the connected location.' },
+      spawns: { doc: 'Entity id → {x, y} — where co-located entities stand on the grid.' },
+      style: { doc: 'Generator style used (settlement/wilds/dungeon/landmark/interior).' },
+    },
+  },
   lifelog: {
     doc: 'Compact per-character memory summary — the living-summary primitive.',
     default: { summary: '' },
     fields: {
       summary: { doc: 'Prose summary of notable events for this character.' },
+    },
+  },
+  clock: {
+    doc: 'The world clock (on the world-state singleton): 4-phase days. Ticks on world actions; phase changes move scheduled NPCs and surface ambient lines.',
+    default: { day: 1, phase: 'morning', ticks: 0 },
+    fields: {
+      day: { doc: 'Calendar day, 1-based.' },
+      phase: { doc: 'morning | afternoon | evening | night.' },
+      ticks: { doc: 'World actions into the current phase.' },
+    },
+  },
+  schedule: {
+    doc: 'An NPC\'s daily rounds: phase → location id (e.g. {morning:"loc-inn", night:"loc-home"}). On each phase change the NPC walks there (unless dead or mid-encounter). Omitted phases = stay put.',
+    default: {},
+    fields: {
+      morning: { doc: 'Location id at morning (optional).' },
+      afternoon: { doc: 'Location id in the afternoon (optional).' },
+      evening: { doc: 'Location id in the evening (optional).' },
+      night: { doc: 'Location id at night (optional).' },
     },
   },
   knowledge: {

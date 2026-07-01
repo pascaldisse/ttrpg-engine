@@ -119,6 +119,21 @@ describe('server integration (Necrotopia, mock LLM)', () => {
     assert.equal(r404.status, 404);
   });
 
+  test('walkable world: locations carry backfilled tile grids; tile textures serve', async () => {
+    const c = await connectClient(srv.port, 'Cartographer');
+    const chapel = c.snapshot['loc-chapel'];
+    assert.ok(chapel.tiles && Array.isArray(chapel.tiles.rows), 'chapel has a tile grid');
+    assert.equal(chapel.tiles.rows.length, chapel.tiles.h);
+    assert.ok((chapel.tiles.exits || []).some(e => e.targetId === 'loc-strip'), 'exit wired to the Strip');
+    c.ws.close();
+
+    const tile = await fetch(`http://localhost:${srv.port}/art/tile/floor`);
+    assert.equal(tile.status, 200);
+    assert.match(tile.headers.get('content-type'), /svg|image/);
+    const bogus = await fetch(`http://localhost:${srv.port}/art/tile/lava-of-doom`);
+    assert.equal(bogus.status, 404, 'unknown tags 404');
+  });
+
   test('reset: world reseeds and connected players are rebound', async () => {
     const p = await connectClient(srv.port, 'Resetter');
     p.sendOps([{ op: 'reset' }]);

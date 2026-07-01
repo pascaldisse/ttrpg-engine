@@ -11,6 +11,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { applyOp, isCanonOp } from '../shared/ops.js';
 import { makeRng } from '../shared/rng.js';
+import { backfillTiles } from '../shared/tilegen.js';
 
 const JOURNAL_CAP = 2000;
 const SAVE_VERSION = 1;
@@ -191,6 +192,13 @@ export class Session {
         }
       }
     }
+
+    // Walkable-world backfill: any location without an authored tile grid gets a
+    // deterministic one (fixed seed: same location id ⇒ same map on every boot,
+    // regardless of TTRPG_SEED), BEFORE the fingerprint so tiles are part of the
+    // world's identity rather than save noise.
+    const filled = backfillTiles(this.entities);
+    if (filled) console.log(`[session] Tile maps generated for ${filled} location(s)`);
 
     // Fingerprint the freshly seeded world so load() can detect a save written
     // against DIFFERENT campaign content (edited scenes shadowed by a stale save).
