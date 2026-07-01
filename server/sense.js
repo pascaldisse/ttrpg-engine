@@ -7,6 +7,7 @@
 
 import { buildLookFrame } from '../shared/context.js';
 import { pcLocationId } from '../shared/space.js';
+import { clockLine } from '../shared/clock.js';
 
 /**
  * Build a compact text scene frame — the "living summary".
@@ -23,7 +24,10 @@ export function look(session, pcId) {
   if (!entities || entities.size === 0) {
     return 'Current scene: (empty — no entities loaded).';
   }
-  return buildLookFrame(entities, pcId);
+  // P4: the DM always knows what time it is — narration follows the clock.
+  const frame = buildLookFrame(entities, pcId);
+  const ws = entities.get('world-state');
+  return ws && ws.clock ? `Time: ${clockLine(ws)}.\n${frame}` : frame;
 }
 
 /**

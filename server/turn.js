@@ -18,8 +18,9 @@ import { presentAgents as sensePresentAgents, look as senseLook } from './sense.
 import { resolveCheck, formatCheckResult } from '../shared/checks.js';
 import { expandOp } from '../shared/effects.js';
 import { validateOp } from '../shared/ops.js';
-import { resolveExit, isConnected, pcLocationId, findPcFor, locationOf } from '../shared/space.js';
+import { resolveExit, isConnected, pcLocationId, findPcFor, locationOf, findPcs } from '../shared/space.js';
 import { resolveActorSpawn } from '../shared/staging.js';
+import { tick as clockTick, phaseBanner, scheduleMoves, ambientLine } from '../shared/clock.js';
 
 /**
  * Movement-intent gate for the deterministic fast-path. The text must READ like
@@ -77,6 +78,56 @@ export function createTurnEngine({ session, broadcast, applyAndBroadcast, dmAgen
       if (questEngine) {
         try { await questEngine.evaluate(); }
         catch (e) { console.error('[turn] quest evaluate error:', e.message); }
+      }
+      // P4: the world breathes — time passes on every world action.
+      try { await tickWorld(); }
+      catch (e) { console.error('[turn] clock tick error:', e.message); }
+    }
+  }
+
+  /**
+   * Advance the world clock one tick (frozen mid-encounter). On a phase change:
+   * banner it, walk scheduled NPCs on their rounds, and surface each occupied
+   * location's ambient line. Deterministic — the world breathes without an LLM;
+   * the DM stages richer beats on top through the normal staging path.
+   */
+  async function tickWorld() {
+    const enc = (session.entities.get('encounter') || {}).encounter || {};
+    if (enc.active) return;
+    const ws = session.entities.get('world-state');
+    if (!ws) return;
+
+    const { clock, phaseChanged } = clockTick(ws);
+    applyAndBroadcast([{ op: 'merge', id: 'world-state', component: 'clock', value: clock }], 'system');
+    if (!phaseChanged) return;
+
+    applyAndBroadcast([{
+      op: 'event', name: 'system',
+      data: { kind: 'clock', day: clock.day, phase: clock.phase, text: phaseBanner(clock) },
+    }], 'system');
+
+    // NPCs make their rounds. Visible notes only where a party member stands.
+    const pcLocs = new Set(findPcs(session.entities).map(([, c]) => (c.place || {}).locationId).filter(Boolean));
+    const moves = scheduleMoves(session.entities, clock.phase);
+    for (const mv of moves) {
+      const npc = session.entities.get(mv.id) || {};
+      const from = (npc.place || {}).locationId;
+      await applyConsequences([mv], session, applyAndBroadcast);
+      if (pcLocs.has(from) || pcLocs.has(mv.to)) {
+        const name = (npc.identity || {}).name || mv.id;
+        const destName = ((session.entities.get(mv.to) || {}).identity || {}).name || mv.to;
+        applyAndBroadcast([{
+          op: 'event', name: 'system',
+          data: { kind: 'ambient', text: pcLocs.has(mv.to) ? `${name} arrives.` : `${name} heads for ${destName}.` },
+        }], 'system');
+      }
+    }
+
+    // Ambient flavor where the party stands.
+    for (const locId of pcLocs) {
+      const line = ambientLine(session.entities.get(locId), clock.phase, clock.day);
+      if (line) {
+        applyAndBroadcast([{ op: 'event', name: 'system', data: { kind: 'ambient', text: line } }], 'system');
       }
     }
   }

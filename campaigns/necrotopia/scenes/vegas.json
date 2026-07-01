@@ -1,48 +1,182 @@
 {
   "loc-chapel": {
-    "identity": { "name": "The Lucky Knot Wedding Chapel", "kind": "location", "description": "A 24-hour Las Vegas wedding chapel — plastic flowers, a heart-shaped neon arch buzzing on the wall, rows of cheap pews. Outside the stained-glass windows the sky is the wrong color. Something is pounding on the double doors." },
+    "identity": {
+      "name": "The Lucky Knot Wedding Chapel",
+      "kind": "location",
+      "description": "A 24-hour Las Vegas wedding chapel — plastic flowers, a heart-shaped neon arch buzzing on the wall, rows of cheap pews. Outside the stained-glass windows the sky is the wrong color. Something is pounding on the double doors."
+    },
     "place": {
       "connections": [
-        { "targetId": "loc-strip", "label": "Out through the shattered doors to the Strip" }
+        {
+          "targetId": "loc-strip",
+          "label": "Out through the shattered doors to the Strip"
+        }
       ]
     },
-    "status": { "alive": true, "conditions": [] },
-    "flags": { "combatZones": [
-      { "id": "the-aisle", "label": "The Aisle", "tags": [] },
-      { "id": "the-altar", "label": "The Altar", "tags": ["raised"] },
-      { "id": "the-doorway", "label": "The Doorway", "tags": [] },
-      { "id": "the-balcony-edge", "label": "The Balcony Edge", "tags": ["ledge"] }
-    ] },
-    "art": { "prompt": "A tacky neon Las Vegas wedding chapel interior at night during an apocalypse, heart-shaped neon arch, overturned pews, red sky through stained glass, B-movie horror, oil painting style", "image": null }
+    "status": {
+      "alive": true,
+      "conditions": []
+    },
+    "flags": {
+      "combatZones": [
+        {
+          "id": "the-aisle",
+          "label": "The Aisle",
+          "tags": []
+        },
+        {
+          "id": "the-altar",
+          "label": "The Altar",
+          "tags": [
+            "raised"
+          ]
+        },
+        {
+          "id": "the-doorway",
+          "label": "The Doorway",
+          "tags": []
+        },
+        {
+          "id": "the-balcony-edge",
+          "label": "The Balcony Edge",
+          "tags": [
+            "ledge"
+          ]
+        }
+      ],
+      "ambient": [
+        "The neon heart arch buzzes, dims, and catches again.",
+        "Something scrabbles across the roof and is gone."
+      ]
+    },
+    "art": {
+      "prompt": "A tacky neon Las Vegas wedding chapel interior at night during an apocalypse, heart-shaped neon arch, overturned pews, red sky through stained glass, B-movie horror, oil painting style",
+      "image": null
+    }
   },
-
   "pc-hero": {
-    "identity": { "name": "The Apocalypse Kid", "kind": "pc", "description": "Leather jacket, katana across the back, a wedding you were definitely not invited to. You don't know why the world is ending, but you intend to outlive it." },
-    "stats": { "hp": 28, "maxHp": 28, "armor": 2, "level": 1, "xp": 0 },
-    "moves": { "list": [
-      { "name": "Katana Sword Slash", "type": "damage", "damage": "1d6", "cost": 1, "special": "Clean steel, close range." },
-      { "name": "Rage Roar", "type": "buff", "status": "rage", "magnitude": 2, "duration": 2, "cost": 1, "special": "+2 damage for 2 rounds." },
-      { "name": "Chi Healing", "type": "heal", "damage": "1d6", "cost": 1, "special": "Heal yourself 1d6 (cannot exceed max Health)." },
-      { "name": "Guardian Ghost", "type": "summon", "cost": 2, "summon": { "name": "Guardian Ghost", "hp": 10, "turns": 3, "damage": "1d6", "accent": "#aa44ff", "moves": [ { "name": "Spectral Slash", "type": "damage", "damage": "1d6", "cost": 1 } ] }, "special": "Summon a spectral ally that fights for 3 turns." },
-      { "name": "Apocalypse Now", "type": "area", "damage": "3d6", "cost": 2, "requiresOverdrive": true, "special": "Overdrive finisher — rip the whole zone apart. Requires a full meter." }
-    ]},
-    "status": { "alive": true, "conditions": [] },
-    "place": { "locationId": "loc-chapel", "connections": [] },
-    "position": { "zoneId": "the-aisle" },
-    "inventory": { "items": [ { "id": "item-katana", "name": "Katana", "qty": 1 } ] },
-    "flags": { "damage": "1d6" }
+    "identity": {
+      "name": "The Apocalypse Kid",
+      "kind": "pc",
+      "description": "Leather jacket, katana across the back, a wedding you were definitely not invited to. You don't know why the world is ending, but you intend to outlive it."
+    },
+    "stats": {
+      "hp": 28,
+      "maxHp": 28,
+      "armor": 2,
+      "level": 1,
+      "xp": 0
+    },
+    "moves": {
+      "list": [
+        {
+          "name": "Katana Sword Slash",
+          "type": "damage",
+          "damage": "1d6",
+          "cost": 1,
+          "special": "Clean steel, close range."
+        },
+        {
+          "name": "Rage Roar",
+          "type": "buff",
+          "status": "rage",
+          "magnitude": 2,
+          "duration": 2,
+          "cost": 1,
+          "special": "+2 damage for 2 rounds."
+        },
+        {
+          "name": "Chi Healing",
+          "type": "heal",
+          "damage": "1d6",
+          "cost": 1,
+          "special": "Heal yourself 1d6 (cannot exceed max Health)."
+        },
+        {
+          "name": "Guardian Ghost",
+          "type": "summon",
+          "cost": 2,
+          "summon": {
+            "name": "Guardian Ghost",
+            "hp": 10,
+            "turns": 3,
+            "damage": "1d6",
+            "accent": "#aa44ff",
+            "moves": [
+              {
+                "name": "Spectral Slash",
+                "type": "damage",
+                "damage": "1d6",
+                "cost": 1
+              }
+            ]
+          },
+          "special": "Summon a spectral ally that fights for 3 turns."
+        },
+        {
+          "name": "Apocalypse Now",
+          "type": "area",
+          "damage": "3d6",
+          "cost": 2,
+          "requiresOverdrive": true,
+          "special": "Overdrive finisher — rip the whole zone apart. Requires a full meter."
+        }
+      ]
+    },
+    "status": {
+      "alive": true,
+      "conditions": []
+    },
+    "place": {
+      "locationId": "loc-chapel",
+      "connections": []
+    },
+    "position": {
+      "zoneId": "the-aisle"
+    },
+    "inventory": {
+      "items": [
+        {
+          "id": "item-katana",
+          "name": "Katana",
+          "qty": 1
+        }
+      ]
+    },
+    "flags": {
+      "damage": "1d6"
+    }
   },
-
   "item-katana": {
-    "identity": { "name": "Katana", "kind": "item", "description": "A folded-steel katana, scratched but razor-keen. Your one good decision this week." },
-    "status": { "alive": true, "conditions": [] },
-    "place": { "locationId": "loc-chapel", "connections": [] },
-    "flags": { "weapon": true, "damage": "1d6" }
+    "identity": {
+      "name": "Katana",
+      "kind": "item",
+      "description": "A folded-steel katana, scratched but razor-keen. Your one good decision this week."
+    },
+    "status": {
+      "alive": true,
+      "conditions": []
+    },
+    "place": {
+      "locationId": "loc-chapel",
+      "connections": []
+    },
+    "flags": {
+      "weapon": true,
+      "damage": "1d6"
+    }
   },
-
   "npc-padre": {
-    "identity": { "name": "Padre Salt", "kind": "npc", "description": "The chapel's Elvis-impersonator officiant, sequined jumpsuit half-burned, a pump shotgun where a hymnal should be. He is not, it turns out, an actual priest." },
-    "persona": { "personality": "Loud, fast-talking, weirdly calm about the end of the world. Treats the apocalypse like a bad Tuesday shift.", "backstory": "Twenty years marrying drunk strangers in this chapel. When the sky cracked he reached under the lectern for the shotgun he keeps for robberies.", "voice": "Vegas lounge drawl, peppers speech with 'baby' and 'thankyaverymuch'. Gallows humor." },
+    "identity": {
+      "name": "Padre Salt",
+      "kind": "npc",
+      "description": "The chapel's Elvis-impersonator officiant, sequined jumpsuit half-burned, a pump shotgun where a hymnal should be. He is not, it turns out, an actual priest."
+    },
+    "persona": {
+      "personality": "Loud, fast-talking, weirdly calm about the end of the world. Treats the apocalypse like a bad Tuesday shift.",
+      "backstory": "Twenty years marrying drunk strangers in this chapel. When the sky cracked he reached under the lectern for the shotgun he keeps for robberies.",
+      "voice": "Vegas lounge drawl, peppers speech with 'baby' and 'thankyaverymuch'. Gallows humor."
+    },
     "knowledge": {
       "facts": [
         "The things at the door are imps — small, mean, and they travel in packs.",
@@ -54,97 +188,326 @@
         "He's out of shotgun shells after the next two blasts."
       ]
     },
-    "agent": { "enabled": true, "controller": "ai", "accent": "#e0b341" },
-    "stats": { "hp": 18, "maxHp": 18, "armor": 2, "level": 1 },
-    "moves": { "list": [ { "name": "Shotgun Blast", "type": "damage", "damage": "1d6", "cost": 1, "special": "A pump-shotgun roar — two shells, then he's dry." } ] },
-    "status": { "alive": true, "conditions": [] },
-    "place": { "locationId": "loc-chapel", "connections": [] },
-    "position": { "zoneId": "the-aisle" },
-    "inventory": { "items": [] },
-    "flags": { "trust_player": 0, "ally": true, "damage": "1d6" }
-  },
-
-  "npc-imp-1": {
-    "identity": { "name": "Snarling Imp", "kind": "npc", "description": "A knee-high devil the color of a bruise, all teeth and claws, dripping something black onto the carpet." },
-    "persona": { "personality": "Vicious, gleeful, dumb. Attacks the nearest warm thing.", "voice": "High, scratchy, gleeful — taunts in broken English." },
-    "agent": { "enabled": true, "accent": "#a64dff" },
-    "knowledge": {
-      "facts": ["We came through the rift to kill everything warm."],
-      "secrets": ["We fear the big one that comes after us far more than we fear you."]
+    "agent": {
+      "enabled": true,
+      "controller": "ai",
+      "accent": "#e0b341"
     },
-    "stats": { "hp": 4, "maxHp": 4, "armor": 2, "level": 1, "xp": 10 },
-    "status": { "alive": true, "conditions": [] },
-    "place": { "locationId": "loc-chapel", "connections": [] },
-    "moves": { "list": [ { "name": "Claw", "type": "damage", "damage": "1d3", "cost": 1, "special": "Rake with filthy claws." } ] },
-    "position": { "zoneId": "the-aisle" },
-    "flags": { "hostile": true, "damage": "1d3" }
-  },
-  "npc-imp-2": {
-    "identity": { "name": "Cackling Imp", "kind": "npc", "description": "Another imp, this one missing an eye and laughing like a broken toy." },
-    "persona": { "personality": "Vicious, gleeful, dumb. Attacks the nearest warm thing.", "voice": "High, scratchy, gleeful — taunts in broken English." },
-    "agent": { "enabled": true, "accent": "#a64dff" },
-    "knowledge": {
-      "facts": ["We came through the rift to kill everything warm."],
-      "secrets": ["We fear the big one that comes after us far more than we fear you."]
+    "stats": {
+      "hp": 18,
+      "maxHp": 18,
+      "armor": 2,
+      "level": 1
     },
-    "stats": { "hp": 4, "maxHp": 4, "armor": 2, "level": 1, "xp": 10 },
-    "status": { "alive": true, "conditions": [] },
-    "place": { "locationId": "loc-chapel", "connections": [] },
-    "moves": { "list": [ { "name": "Claw", "type": "damage", "damage": "1d3", "cost": 1, "special": "Rake with filthy claws." } ] },
-    "position": { "zoneId": "the-aisle" },
-    "flags": { "hostile": true, "damage": "1d3" }
-  },
-  "npc-imp-3": {
-    "identity": { "name": "Lunging Imp", "kind": "npc", "description": "A wiry imp already springing off a pew toward your throat." },
-    "persona": { "personality": "Vicious, gleeful, dumb. Attacks the nearest warm thing.", "voice": "High, scratchy, gleeful — taunts in broken English." },
-    "agent": { "enabled": true, "accent": "#a64dff" },
-    "knowledge": {
-      "facts": ["We came through the rift to kill everything warm."],
-      "secrets": ["We fear the big one that comes after us far more than we fear you."]
-    },
-    "stats": { "hp": 4, "maxHp": 4, "armor": 2, "level": 1, "xp": 10 },
-    "status": { "alive": true, "conditions": [] },
-    "place": { "locationId": "loc-chapel", "connections": [] },
-    "moves": { "list": [ { "name": "Claw", "type": "damage", "damage": "1d3", "cost": 1, "special": "Rake with filthy claws." } ] },
-    "position": { "zoneId": "the-aisle" },
-    "flags": { "hostile": true, "damage": "1d3" }
-  },
-  "npc-imp-4": {
-    "identity": { "name": "Hissing Imp", "kind": "npc", "description": "The runt of the litter, hanging back and hissing — the kind that bites you while you fight its bigger friends." },
-    "persona": { "personality": "Vicious, gleeful, dumb. Attacks the nearest warm thing.", "voice": "High, scratchy, gleeful — taunts in broken English." },
-    "agent": { "enabled": true, "accent": "#a64dff" },
-    "knowledge": {
-      "facts": ["We came through the rift to kill everything warm."],
-      "secrets": ["We fear the big one that comes after us far more than we fear you."]
-    },
-    "stats": { "hp": 4, "maxHp": 4, "armor": 2, "level": 1, "xp": 10 },
-    "status": { "alive": true, "conditions": [] },
-    "place": { "locationId": "loc-chapel", "connections": [] },
-    "moves": { "list": [ { "name": "Claw", "type": "damage", "damage": "1d3", "cost": 1, "special": "Rake with filthy claws." } ] },
-    "position": { "zoneId": "the-aisle" },
-    "flags": { "hostile": true, "damage": "1d3" }
-  },
-
-  "loc-strip": {
-    "identity": { "name": "The Las Vegas Strip", "kind": "location", "description": "The Strip in full apocalypse: a casino marquee shears off and crashes into the street, fire-hydrant geysers turn pink in the neon, and figures that are not people lope between the stalled cars. A cherry-red Cadillac idles at the curb, driver's door open, keys swinging in the ignition." },
-    "place": {
-      "connections": [
-        { "targetId": "loc-chapel", "label": "Back into the chapel" }
+    "moves": {
+      "list": [
+        {
+          "name": "Shotgun Blast",
+          "type": "damage",
+          "damage": "1d6",
+          "cost": 1,
+          "special": "A pump-shotgun roar — two shells, then he's dry."
+        }
       ]
     },
-    "status": { "alive": true, "conditions": [] },
-    "art": { "prompt": "The Las Vegas Strip during the apocalypse, casino marquee crashing into the street, pink neon, stalled cars, a cherry-red Cadillac idling at the curb, distant demonic figures, red sky, B-movie horror, oil painting style", "image": null }
+    "status": {
+      "alive": true,
+      "conditions": []
+    },
+    "place": {
+      "locationId": "loc-chapel",
+      "connections": []
+    },
+    "position": {
+      "zoneId": "the-aisle"
+    },
+    "inventory": {
+      "items": []
+    },
+    "flags": {
+      "trust_player": 0,
+      "ally": true,
+      "damage": "1d6"
+    }
   },
-
+  "npc-imp-1": {
+    "identity": {
+      "name": "Snarling Imp",
+      "kind": "npc",
+      "description": "A knee-high devil the color of a bruise, all teeth and claws, dripping something black onto the carpet."
+    },
+    "persona": {
+      "personality": "Vicious, gleeful, dumb. Attacks the nearest warm thing.",
+      "voice": "High, scratchy, gleeful — taunts in broken English."
+    },
+    "agent": {
+      "enabled": true,
+      "accent": "#a64dff"
+    },
+    "knowledge": {
+      "facts": [
+        "We came through the rift to kill everything warm."
+      ],
+      "secrets": [
+        "We fear the big one that comes after us far more than we fear you."
+      ]
+    },
+    "stats": {
+      "hp": 4,
+      "maxHp": 4,
+      "armor": 2,
+      "level": 1,
+      "xp": 10
+    },
+    "status": {
+      "alive": true,
+      "conditions": []
+    },
+    "place": {
+      "locationId": "loc-chapel",
+      "connections": []
+    },
+    "moves": {
+      "list": [
+        {
+          "name": "Claw",
+          "type": "damage",
+          "damage": "1d3",
+          "cost": 1,
+          "special": "Rake with filthy claws."
+        }
+      ]
+    },
+    "position": {
+      "zoneId": "the-aisle"
+    },
+    "flags": {
+      "hostile": true,
+      "damage": "1d3"
+    }
+  },
+  "npc-imp-2": {
+    "identity": {
+      "name": "Cackling Imp",
+      "kind": "npc",
+      "description": "Another imp, this one missing an eye and laughing like a broken toy."
+    },
+    "persona": {
+      "personality": "Vicious, gleeful, dumb. Attacks the nearest warm thing.",
+      "voice": "High, scratchy, gleeful — taunts in broken English."
+    },
+    "agent": {
+      "enabled": true,
+      "accent": "#a64dff"
+    },
+    "knowledge": {
+      "facts": [
+        "We came through the rift to kill everything warm."
+      ],
+      "secrets": [
+        "We fear the big one that comes after us far more than we fear you."
+      ]
+    },
+    "stats": {
+      "hp": 4,
+      "maxHp": 4,
+      "armor": 2,
+      "level": 1,
+      "xp": 10
+    },
+    "status": {
+      "alive": true,
+      "conditions": []
+    },
+    "place": {
+      "locationId": "loc-chapel",
+      "connections": []
+    },
+    "moves": {
+      "list": [
+        {
+          "name": "Claw",
+          "type": "damage",
+          "damage": "1d3",
+          "cost": 1,
+          "special": "Rake with filthy claws."
+        }
+      ]
+    },
+    "position": {
+      "zoneId": "the-aisle"
+    },
+    "flags": {
+      "hostile": true,
+      "damage": "1d3"
+    }
+  },
+  "npc-imp-3": {
+    "identity": {
+      "name": "Lunging Imp",
+      "kind": "npc",
+      "description": "A wiry imp already springing off a pew toward your throat."
+    },
+    "persona": {
+      "personality": "Vicious, gleeful, dumb. Attacks the nearest warm thing.",
+      "voice": "High, scratchy, gleeful — taunts in broken English."
+    },
+    "agent": {
+      "enabled": true,
+      "accent": "#a64dff"
+    },
+    "knowledge": {
+      "facts": [
+        "We came through the rift to kill everything warm."
+      ],
+      "secrets": [
+        "We fear the big one that comes after us far more than we fear you."
+      ]
+    },
+    "stats": {
+      "hp": 4,
+      "maxHp": 4,
+      "armor": 2,
+      "level": 1,
+      "xp": 10
+    },
+    "status": {
+      "alive": true,
+      "conditions": []
+    },
+    "place": {
+      "locationId": "loc-chapel",
+      "connections": []
+    },
+    "moves": {
+      "list": [
+        {
+          "name": "Claw",
+          "type": "damage",
+          "damage": "1d3",
+          "cost": 1,
+          "special": "Rake with filthy claws."
+        }
+      ]
+    },
+    "position": {
+      "zoneId": "the-aisle"
+    },
+    "flags": {
+      "hostile": true,
+      "damage": "1d3"
+    }
+  },
+  "npc-imp-4": {
+    "identity": {
+      "name": "Hissing Imp",
+      "kind": "npc",
+      "description": "The runt of the litter, hanging back and hissing — the kind that bites you while you fight its bigger friends."
+    },
+    "persona": {
+      "personality": "Vicious, gleeful, dumb. Attacks the nearest warm thing.",
+      "voice": "High, scratchy, gleeful — taunts in broken English."
+    },
+    "agent": {
+      "enabled": true,
+      "accent": "#a64dff"
+    },
+    "knowledge": {
+      "facts": [
+        "We came through the rift to kill everything warm."
+      ],
+      "secrets": [
+        "We fear the big one that comes after us far more than we fear you."
+      ]
+    },
+    "stats": {
+      "hp": 4,
+      "maxHp": 4,
+      "armor": 2,
+      "level": 1,
+      "xp": 10
+    },
+    "status": {
+      "alive": true,
+      "conditions": []
+    },
+    "place": {
+      "locationId": "loc-chapel",
+      "connections": []
+    },
+    "moves": {
+      "list": [
+        {
+          "name": "Claw",
+          "type": "damage",
+          "damage": "1d3",
+          "cost": 1,
+          "special": "Rake with filthy claws."
+        }
+      ]
+    },
+    "position": {
+      "zoneId": "the-aisle"
+    },
+    "flags": {
+      "hostile": true,
+      "damage": "1d3"
+    }
+  },
+  "loc-strip": {
+    "identity": {
+      "name": "The Las Vegas Strip",
+      "kind": "location",
+      "description": "The Strip in full apocalypse: a casino marquee shears off and crashes into the street, fire-hydrant geysers turn pink in the neon, and figures that are not people lope between the stalled cars. A cherry-red Cadillac idles at the curb, driver's door open, keys swinging in the ignition."
+    },
+    "place": {
+      "connections": [
+        {
+          "targetId": "loc-chapel",
+          "label": "Back into the chapel"
+        }
+      ]
+    },
+    "status": {
+      "alive": true,
+      "conditions": []
+    },
+    "art": {
+      "prompt": "The Las Vegas Strip during the apocalypse, casino marquee crashing into the street, pink neon, stalled cars, a cherry-red Cadillac idling at the curb, distant demonic figures, red sky, B-movie horror, oil painting style",
+      "image": null
+    },
+    "flags": {
+      "ambient": [
+        "A slot machine inside a dead casino pays out to nobody.",
+        "Ash sifts down like snow onto the Cadillac's hood."
+      ]
+    }
+  },
   "item-cadillac": {
-    "identity": { "name": "Idling Cadillac", "kind": "item", "description": "A cherry-red convertible Cadillac, engine running, keys in the ignition, the groom nowhere in sight. Your ride out of this dying city — if you can reach it and floor it." },
-    "status": { "alive": true, "conditions": [] },
-    "place": { "locationId": "loc-strip", "connections": [] },
-    "flags": { "vehicle": true, "keysIn": true }
+    "identity": {
+      "name": "Idling Cadillac",
+      "kind": "item",
+      "description": "A cherry-red convertible Cadillac, engine running, keys in the ignition, the groom nowhere in sight. Your ride out of this dying city — if you can reach it and floor it."
+    },
+    "status": {
+      "alive": true,
+      "conditions": []
+    },
+    "place": {
+      "locationId": "loc-strip",
+      "connections": []
+    },
+    "flags": {
+      "vehicle": true,
+      "keysIn": true
+    }
   },
-
   "quest-escape": {
-    "identity": { "name": "Get Out of Vegas", "kind": "quest", "description": "Survive the imps, reach the Strip, and steal the idling Cadillac to flee Las Vegas — the first leg of a much longer road through the Apocalypse." },
+    "identity": {
+      "name": "Get Out of Vegas",
+      "kind": "quest",
+      "description": "Survive the imps, reach the Strip, and steal the idling Cadillac to flee Las Vegas — the first leg of a much longer road through the Apocalypse."
+    },
     "quest": {
       "phase": "active",
       "currentStep": 0,
@@ -154,14 +517,35 @@
         "Take the idling Cadillac and floor it out of the city."
       ],
       "triggers": [
-        { "type": "allDead", "ids": ["npc-imp-1", "npc-imp-2", "npc-imp-3", "npc-imp-4"] },
-        { "type": "atLocation", "id": "loc-strip" },
-        { "type": "hasItem", "id": "item-cadillac" }
+        {
+          "type": "allDead",
+          "ids": [
+            "npc-imp-1",
+            "npc-imp-2",
+            "npc-imp-3",
+            "npc-imp-4"
+          ]
+        },
+        {
+          "type": "atLocation",
+          "id": "loc-strip"
+        },
+        {
+          "type": "hasItem",
+          "id": "item-cadillac"
+        }
       ],
-      "rewards": { "xp": 100, "items": [{ "id": "item-cadillac", "name": "Cherry-red Cadillac" }] }
+      "rewards": {
+        "xp": 100,
+        "items": [
+          {
+            "id": "item-cadillac",
+            "name": "Cherry-red Cadillac"
+          }
+        ]
+      }
     }
   },
-
   "world-state": {
     "flags": {}
   }
