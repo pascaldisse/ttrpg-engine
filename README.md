@@ -1,28 +1,60 @@
 # AI-TTRPG Engine
 
-A turn-based AI-powered tabletop RPG engine. JSON-native, op-protocol-driven, ruleset-extensible.
+A turn-based AI-powered tabletop RPG engine. JSON-native, op-protocol-driven,
+rules-agnostic, **multiplayer**. An LLM runs the table — narration, NPCs,
+adjudication — while the engine rolls every die deterministically.
 
-**Stack:** Node ESM server + Vite client + WebSocket + plain JS — no framework, no TypeScript, no React.
+**Stack:** Node ESM server + Vite client + WebSocket + plain JS — no framework,
+no TypeScript, no React. LLM: DeepSeek by default (any OpenAI-compatible API),
+full offline mode with a deterministic mock. Scene art: free keyless generation
+(Pollinations) with disk caching.
 
 ## Quick start
 
 ```bash
 npm install
-npm run dev
+npm run play:necrotopia    # the shipped campaign (or `npm run dev` for the 5e demo world)
 ```
 
-- Server: `http://localhost:8420` (WS + HTTP)
-- Player client: `http://localhost:5173` (Vite dev server)
-- **DMView** (DM control surface): `http://localhost:5173/dm.html`
+- Player client: `http://localhost:5173` — every browser (or friend on your LAN)
+  that opens it becomes a **party member** with their own character.
+- **DMView**: `http://localhost:5173/dm.html` — the DM control surface.
+- Server API + WS: `http://localhost:8420`
 
-The **DMView** joins as the `dm` seat and exposes: an **autopilot** toggle (when off, the DM reviews each LLM
-beat via a propose→approve gate — approve / reject / regenerate), an **agent-activity** feed of LLM decisions
-and tool calls, **combat turn-order** override, and a full entity inspector. Players never receive the DM-only
-machinery or NPC secrets — the server filters every message per seat (`shared/visibility.js`).
+You start as **the Apocalypse Kid** in a Las Vegas wedding chapel as imps burst
+through the doors. `attack the snarling imp`, survive the CTB-timeline fight with
+Padre Salt at your side, then escape to the Strip and steal the idling Cadillac.
+
+No API key? It runs fully offline: `LLM_PROVIDER=mock npm run play:necrotopia`
+(canned narration, real combat/quests/dice).
+
+## What's in the box
+
+- **The loop** — type anything; the LLM DM adjudicates (speak / move / check /
+  consequence), the engine rolls, narration streams token-by-token, and a
+  canonizer records what became true. The story survives refreshes (journal
+  backfill) and Ctrl-C (flush-on-exit saves).
+- **Multiplayer** — first player claims the campaign protagonist; every further
+  player gets a party member auto-built from the ruleset. Per-seat combat turns,
+  party-wide XP, per-seat information hiding (players never see NPC secrets).
+- **Combat** — deterministic encounters: FFX-style CTB timeline or classic
+  initiative, Moves with statuses (bleed/stun/rage), zones + hazards, overdrive
+  finishers, summons, enemy morale (the LLM wakes only for the interesting
+  beats: broken morale, mid-fight talk, improvised actions like "throw sand in
+  its eyes").
+- **DMView** — the full story transcript, autopilot toggle (off = every LLM beat
+  needs your approve/reject/regenerate), stage-a-beat authoring (spawn actors,
+  request checks, put words in an NPC's mouth, begin combat), turn-order
+  override for both combat models, agent-activity traces, god-mode inspector.
+- **Scene art** — locations carry an `art.prompt`; the engine renders it once
+  (free, keyless) and caches it. `ART_PROVIDER=mock` for offline SVG moods.
+- **Rules-as-data** — 5e (d20-vs-DC), DSA (3d20 roll-under), and Necrotopia
+  (d6-over-Armor) run on the same core. A ruleset is one pure-data file. See
+  [docs/RULESET-AUTHORING.md](docs/RULESET-AUTHORING.md).
+- **Worldgen** — generate a new campaign as data: procgen skeleton + an LLM pass
+  that charges it with meaning, written in the exact shape the engine seeds from.
 
 ## Configuration
-
-By default the server loads the campaign from `./world/`.
 
 | Variable | Default | Purpose |
 |---|---|---|
@@ -30,104 +62,35 @@ By default the server loads the campaign from `./world/`.
 | `TTRPG_PORT` | `8420` | Server HTTP + WS port |
 | `TTRPG_CLIENT_PORT` | `5173` | Vite dev server port |
 | `TTRPG_SAVE` | `default` | Session save slot name |
-| `TTRPG_RULESET` | _(none)_ | Ruleset bundle to load at boot from `world/ruleset/<id>/` (e.g. `srd5e`, `dsa5`). Unset → built-in 5e. |
-| `TTRPG_SEED` | `42` | PRNG seed for reproducible sessions (dice, etc.). A loaded save wins. |
-| `LLM_PROVIDER` | `deepseek` | LLM backend: `deepseek` or `mock` (offline, no key). |
-| `DEEPSEEK_API_KEY` | _(none)_ | DeepSeek key — read **only** from env (gitignored `.env`); never logged or sent to the client. |
+| `TTRPG_RULESET` | _(none)_ | Ruleset bundle from `<world>/ruleset/<id>/`. Unset → built-in 5e |
+| `TTRPG_SEED` | `42` | PRNG seed (reproducible dice); a loaded save wins |
+| `LLM_PROVIDER` | `deepseek` | `deepseek` or `mock` (offline, no key) |
+| `DEEPSEEK_API_KEY` | _(none)_ | Read only from env / gitignored `.env`; never logged or sent to clients |
+| `ART_PROVIDER` | `pollinations` | `pollinations` (free, keyless) · `mock` (offline SVG) · `openai` (needs `OPENAI_API_KEY`) |
+
+## Scripts
+
+```bash
+npm run play:necrotopia   # the shipped campaign
+npm run dev               # server + client on ./world (5e demo)
+npm test                  # unit + integration suite (boots real servers, offline)
+npm run smoke:necrotopia  # ruleset smoke checks
+npm run worldgen -- --theme "haunted salt marsh" --size small --out world/scenes/marsh.json
+```
 
 ## HTTP API
 
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/schema` | Full declarative SCHEMA object |
-| `GET` | `/events?since=<seq>&limit=<n>` | Journal entries |
+| `GET` | `/events?since=<seq>&limit=<n>` | Journal (the story so far) |
 | `POST` | `/op` | Apply op(s) — `{ops:[...], from?}` |
+| `GET` | `/art/<entityId>` | The entity's `art.prompt`, rendered + cached |
 | `GET` | `/health` | Server stats |
+| `GET` | `/sense/look` · `/sense/describe?id=` · `/sense/query` · `/sense/check` | Text senses |
 
-## CLI tools
+## Extending
 
-```bash
-# Spawn an entity
-node tools/patch.mjs spawn '{"identity":{"name":"Goblin","kind":"npc"},"status":{"alive":true}}' goblin-1
-
-# Set a component
-node tools/patch.mjs set goblin-1 status '{"alive":false}'
-
-# View events
-node tools/patch.mjs events 0
-
-# Get schema
-curl localhost:8420/schema
-```
-
-### Generate a world
-
-Generate a brand-new world as data (procgen skeleton + an LLM pass that "charges it with meaning"),
-written to a scene JSON in the exact shape the engine seeds from — run once, then commit/hand-edit/play it.
-
-```bash
-# Offline, deterministic (mock LLM):
-npm run worldgen -- --provider mock --theme "haunted salt marsh" --size small --out world/scenes/marsh.json
-
-# With DeepSeek (key loaded from .env):
-npm run worldgen -- --theme "sunbaked frontier town" --size medium --seed 7
-```
-
-Flags: `--theme`, `--size small|medium|large`, `--locations <n>`, `--seed <n>`, `--provider mock|deepseek`, `--out <path>`.
-Point `TTRPG_WORLD` at a directory containing the generated `scenes/` to play it.
-
-## Play the Necrotopia campaign
-
-A complete, playable campaign ships in `campaigns/necrotopia/` — *Necrotopia: Handbook to the
-Apocalypse* (a d6, roll-OVER-Armor system with no attributes and custom Moves). It proves the
-engine is rules-agnostic a **third** way (5e = d20-vs-DC, DSA5 = 3d20 roll-under, Necrotopia =
-d6 > Armor), all on the same core.
-
-```bash
-npm run play:necrotopia          # server on campaigns/necrotopia + the Necrotopia ruleset
-# equivalent to:
-TTRPG_WORLD=campaigns/necrotopia TTRPG_RULESET=necrotopia npm run dev
-```
-
-Then open the player client (`http://localhost:5173`). You start as **the Apocalypse Kid** in a
-Las Vegas wedding chapel as imps burst through the doors — `attack the snarling imp`, survive,
-then escape to the Strip and steal the idling Cadillac. Smoke test: `npm run smoke:necrotopia`.
-
-## How to extend
-
-### Add a component
-
-1. Add it to `shared/schema.js` — the `SCHEMA` object. Include `doc`, `default`, and `fields` with `range`/`enum` where useful.
-2. Add rendering in `client/kernel/view.js` — the `_renderComponent()` switch. The client inspector auto-shows new components.
-3. The server's op validation and the `GET /schema` endpoint pick it up automatically.
-
-### Add an op handler
-
-1. Add the handler function to `handlerRegistry` in `shared/ops.js`. The signature is `(entities /* Map */, op, counterRef)` → `{ok, ...}`.
-2. For ephemeral ops (broadcast+journal only, no entity mutation), add the op kind to the list in `applyOp()` in `shared/ops.js`.
-
-### Add a campaign / ruleset directory
-
-1. Create a directory with `campaign.json` (superscene), `scenes/` (`.json` files with `{id: {components}}`), and optionally `ruleset/<id>/` (`ruleset.js` + `system.md`).
-2. Point `TTRPG_WORLD` at it (and `TTRPG_RULESET=<id>` to load the bundle). `campaigns/necrotopia/` is a worked example.
-3. Rulesets call `registerComponents(...)` from `shared/schema.js` to extend the schema — the DM inspector, LLM contract, and validation all pick it up.
-
-### A ruleset bundle (`ruleset.js`) is pure data + optional hooks
-
-The core stays rules-neutral; a bundle plugs in its own mechanics by exporting any of:
-
-- `components` — schema extensions, registered via `registerComponents` (e.g. Necrotopia's `moves`).
-- `checks` — pluggable check definitions, registered via `registerChecks` in `shared/checks.js`. A check supplies its own `dice`, `comparator`, and `resolve()` — this is how the SAME engine rolls d20-vs-DC, 3d20 roll-under, **and** d6 > Armor.
-- `statuses` — status-effect definitions (C1), registered via `registerStatuses` in `shared/statuses.js`. Each def declares how a status behaves: `onTick` (bleed deals damage each turn), `skipTurn` (stun), `modifyOutgoing`/`modifyIncoming` (rage +dmg, armor aura), `modifySpeed` (haste/slow). The engine ticks and aggregates them; the bundle just supplies data.
-- `combat` — an optional combat override consumed by `shared/combat.js`:
-  - `combat.resolveAttack(params, entities, rng, mods)` fully replaces attack resolution.
-  - `combat.resolveMove(move, params, entities, rng, mods)` resolves a declared **Move** (damage/heal/buff/stun/bleed/area/utility) → `{ops, statusOps, summary}`. The engine threads aggregated status `mods` (rage/armor/aim) into both resolvers; the bundle stays import-free.
-  - `combat.initiativeMode: 'timeline'` (C2) drives a **CTB timeline** — a speed-driven FFX-style queue (`speedOf`, `moveCost`); `'fixed'` skips the roll for a declared order; unset → classic d20 initiative.
-  - `combat.flavor` overrides the combat narration lines (begin/victory/defeat/flee).
-- **Combat moves & statuses (C1):** every combatant has a `moves.list`; the player declares a Move (+ target) each turn via the combat HUD. Moves do mechanically distinct things and apply statuses that tick at the start of a bearer's turn (bleed bites, stun skips, rage/armor-aura modify the math). Fully deterministic — no LLM in the loop.
-- **Enemies as agents (C3):** each enemy runs deterministic `enemyInstinct` by default (zero LLM). The LLM wakes ONLY for the interesting beats — a morale-broken enemy's decision (`combat.enemyInstinct`/`moraleThreshold` → fight/flee/surrender/parley via `npcAgent.combatDecide`), addressing an enemy mid-fight (`@Name …` → it answers in voice), or an improvised off-menu action ("throw sand in its eyes" → `dmAgent.adjudicateCombat` returns a check + status; the engine rolls).
-- **Zones & improvised surfaces (C4):** an encounter carries abstract `zones` (authored on the location via `flags.combatZones`, else one implicit `field`); each combatant has a `position.zoneId`. Move `range` (`melee`/`ranged`/`area`/`self`) is enforced against zones. Hazards (`encounter.hazards`) are statuses on a zone (fire/oil) that tick on whoever stands there. The improv path can `spawnHazard` ("kick the brazier into the oil") or exploit the board (shoving a foe off a `ledge`-tagged zone is lethal) — an open surface vocabulary the DM maps to deterministic ops.
-- **Party seats, overdrive & summons (C5):** any ally combatant (`flags.ally`) joins the timeline as a seat driven by an AI or a human interchangeably (`agent.controller`) — the server only accepts a combat action from the seat's owner, on its turn (the basis for multiplayer). `meter.overdrive` fills on damage dealt/taken (`combat.overdrive`); a `requiresOverdrive` finisher Move is gated until full and spends the bar. A `type:'summon'` Move spawns a temporary AI combatant that takes its own turns and despawns when its lifetime runs out. Padre Salt fights at your side as an AI ally in the chapel.
-- `system.md` — the DM narration voice/rules for the LLM.
-
-See `campaigns/necrotopia/ruleset/necrotopia/` for all four in ~150 lines of pure, import-free data.
+- **Architecture** (op protocol, turn pipeline, seams): [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- **Write a ruleset / campaign**: [docs/RULESET-AUTHORING.md](docs/RULESET-AUTHORING.md)
+- Original build-phase specs are preserved in [docs/archive/](docs/archive/).
