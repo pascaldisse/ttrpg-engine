@@ -86,18 +86,26 @@ const SEMANTIC_HANDLERS = {
     ];
   },
 
-  /** {op:'giveItem', id, item:{id,name,qty?}} → set inventory {items: [...cur, newItem]} */
+  /** {op:'giveItem', id, item:{id,name,qty?}} → set inventory. A second grant of the
+   *  same item id STACKS (increments qty) instead of silently no-oping. */
   giveItem(entities, op) {
     const comps = entities.get(op.id);
     if (!comps) return [];
     const inv = comps.inventory || {};
     const curItems = Array.isArray(inv.items) ? [...inv.items] : [];
-    // Don't duplicate if item with same id already present
     const itemId = (op.item && op.item.id) || (typeof op.item === 'string' ? op.item : null);
-    if (itemId && curItems.some(i => (typeof i === 'string' ? i : i.id) === itemId)) {
-      return [];
+    const addQty = Math.max(1, (op.item && op.item.qty) || 1);
+    const existingIdx = itemId
+      ? curItems.findIndex(i => (typeof i === 'string' ? i : i.id) === itemId)
+      : -1;
+    if (existingIdx !== -1) {
+      const existing = curItems[existingIdx];
+      const cur = typeof existing === 'string' ? { id: existing } : { ...existing };
+      cur.qty = Math.max(1, cur.qty || 1) + addQty;
+      curItems[existingIdx] = cur;
+    } else {
+      curItems.push(typeof op.item === 'string' ? { id: op.item } : op.item);
     }
-    curItems.push(op.item);
     return [
       { op: 'set', id: op.id, component: 'inventory', value: { items: curItems } },
     ];

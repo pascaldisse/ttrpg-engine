@@ -42,8 +42,8 @@ const ADJUDICATE_SYSTEM_PROMPT = `You are the DM referee. For each player action
 2. Does the player want to TRAVEL to a connected place? → set move:{"to":"<locationId>"}
    using an EXACT targetId from the scene's Exits list. NEVER move to a place that is
    not listed as an exit. When moving, leave checks and ops empty — arrival is narrated separately.
-3. Does the action require dice checks? → list them (ability, optional skill, dc, reason).
-   You must NEVER invent dice values — only REQUEST checks. The engine rolls.
+3. Does the action require dice checks? → list them in "checks" using the exact shape
+   the reply format specifies. You must NEVER invent dice values — only REQUEST checks. The engine rolls.
 4. Does the action have certain consequences? → provide semantic ops.
    - If a check is requested: provide ops for the SUCCESS case only.
    - For no-check actions: provide ops directly.
@@ -153,11 +153,16 @@ let streamCounter = 0;
  * @param {object} params.llm — LlmClient
  * @returns {{adjudicate, narrateOutcome, canonize, adjudicateCombat}}
  */
-export function createDmAgent({ session, broadcast, applyAndBroadcast, llm, rulesetPrompt, actorTemplates }) {
+export function createDmAgent({ session, broadcast, applyAndBroadcast, llm, rulesetPrompt, actorTemplates, defaultCheck }) {
   // The DM narration voice comes from the loaded ruleset (P7) when present,
   // else the built-in 5e default. Rules-as-data: the engine names no ruleset.
   const systemPrompt = rulesetPrompt || DM_SYSTEM_PROMPT;
   const sessionId = process.env.TTRPG_SAVE || 'default';
+  // How the DM asks for dice: the ruleset's default check kind + DC guidance,
+  // else the built-in 5e ability-check. Keeps the adjudicator rules-agnostic.
+  const checkSpec = defaultCheck && defaultCheck.kind
+    ? { kind: defaultCheck.kind, dcDoc: defaultCheck.dcDoc || 'a difficulty appropriate to the ruleset', shape: `{check:"${defaultCheck.kind}", dc, reason}` }
+    : { kind: 'ability-check', dcDoc: 'DC 5–30 (10 easy, 15 moderate, 20 hard)', shape: '{ability, skill?, dc, reason}' };
   // Archetypes the DM may spawn (world-first). Empty when the ruleset ships no
   // actorTemplates → the DM keeps no spawn power (5e/DSA unaffected).
   const spawnArchetypes = actorTemplates
@@ -172,7 +177,7 @@ export function createDmAgent({ session, broadcast, applyAndBroadcast, llm, rule
    * @param {Array} presentNpcs — from sense.presentAgents()
    * @returns {Promise<{speakTo:string|null, note:string, checks:object[], ops:object[]}>}
    */
-  async function adjudicate(actionOp, presentNpcs) {
+  async function adjudicate(actionOp, presentNpcs, lookText) {
     const actionText = actionOp.text || '';
 
     // Build adjudication context
@@ -190,7 +195,7 @@ export function createDmAgent({ session, broadcast, applyAndBroadcast, llm, rule
     const pcName = (pcEntry && pcEntry[1].identity && pcEntry[1].identity.name) || 'the hero';
 
     // Location-scoped scene frame (lists present NPCs/items + exits the player may use).
-    const lookText = session._lookCache || senseLook(session);
+    const look = lookText || senseLook(session);
 
     const stageField = spawnArchetypes.length
       ? ', "spawns":[{archetype,name?,hostile?,ally?,count?}], "beginCombat":<true if this starts a fight>'
@@ -198,11 +203,11 @@ export function createDmAgent({ session, broadcast, applyAndBroadcast, llm, rule
     const messages = [
       {
         role: 'system',
-        content: adjudicatePrompt(spawnArchetypes)(npcList, pcId, pcName, pcStats, lookText),
+        content: adjudicatePrompt(spawnArchetypes)(npcList, pcId, pcName, pcStats, look),
       },
       {
         role: 'user',
-        content: `Player action: "${actionText}"\n\nRespond with JSON ONLY: {"speakTo":<npcId|null>, "move":{"to":"<locationId>"}|null, "note":"<director note for NPC if speaking>", "checks":[{ability,skill?,dc,reason}], "ops":[<semantic ops for SUCCESS case>]${stageField}}`,
+        content: `Player action: "${actionText}"\n\nRespond with JSON ONLY: {"speakTo":<npcId|null>, "move":{"to":"<locationId>"}|null, "note":"<director note for NPC if speaking>", "checks":[${checkSpec.shape}], "ops":[<semantic ops for SUCCESS case>]${stageField}}\nFor "dc" use ${checkSpec.dcDoc}.`,
       },
     ];
 
@@ -346,7 +351,7 @@ export function createDmAgent({ session, broadcast, applyAndBroadcast, llm, rule
     }
 
     // Ground canonize in the scoped scene so it can reference real item entity ids.
-    const lookText = session._lookCache || senseLook(session);
+    const lookText = senseLook(session);
 
     const messages = [
       { role: 'system', content: CANONIZE_SYSTEM_PROMPT.replaceAll('<PC_ID>', pcId) },
@@ -393,8 +398,8 @@ export function createDmAgent({ session, broadcast, applyAndBroadcast, llm, rule
     const positions = [pcId, ...(enemyIds || [])].map(id => `${id}@${zoneOf(id)}`).join(', ');
 
     const messages = [
-      { role: 'system', content: `${COMBAT_ADJUDICATE_PROMPT}\n\nLiving enemies: ${(enemyIds || []).join(', ') || '(none)'}\nThe PC id is "${pcId}".\nZones: ${zoneList}\nPositions: ${positions}` },
-      { role: 'user', content: `Improvised combat action: "${actionText}"\n\nRespond JSON ONLY: {"checks":[{check,dc,reason}], "ops":[<applyStatus/damage/spawnHazard for the SUCCESS case>]}` },
+      { role: 'system', content: `${COMBAT_ADJUDICATE_PROMPT}\n\nThe check kind is "${checkSpec.kind}"; for "dc" use ${checkSpec.dcDoc}.\nLiving enemies: ${(enemyIds || []).join(', ') || '(none)'}\nThe PC id is "${pcId}".\nZones: ${zoneList}\nPositions: ${positions}` },
+      { role: 'user', content: `Improvised combat action: "${actionText}"\n\nRespond JSON ONLY: {"checks":[{check:"${checkSpec.kind}", dc, reason}], "ops":[<applyStatus/damage/spawnHazard for the SUCCESS case>]}` },
     ];
 
     try {

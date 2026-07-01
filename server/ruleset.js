@@ -62,5 +62,8 @@ export async function loadRuleset(id, worldDir) {
     statuses: mod.statuses || {},
     combat: mod.combat || null,
     actorTemplates: mod.actorTemplates || null,
+    // {kind, dcDoc, dcDefault} — the check the DM should request for generic
+    // narrative actions (necro-test / ability-check / …). null → built-in 5e.
+    defaultCheck: mod.defaultCheck || null,
   };
 }

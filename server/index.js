@@ -36,12 +36,14 @@ const TTRPG_RULESET = process.env.TTRPG_RULESET || null;
 let rulesetPrompt = null;
 let rulesetCombat = null;
 let rulesetActorTemplates = null;
+let rulesetDefaultCheck = null;
 if (TTRPG_RULESET) {
   try {
     const rs = await loadRuleset(TTRPG_RULESET, TTRPG_WORLD);
     rulesetPrompt = rs.systemPrompt || null;
     rulesetCombat = rs.combat || null;
     rulesetActorTemplates = rs.actorTemplates || null;
+    rulesetDefaultCheck = rs.defaultCheck || null;
     console.log(`[ruleset] Loaded "${(rs.meta && rs.meta.name) || TTRPG_RULESET}" (${(rs.meta && rs.meta.dice) || '?'})${rulesetCombat ? ' +combat' : ''}${rulesetActorTemplates ? ' +spawn' : ''}`);
   } catch (e) {
     console.error(`[ruleset] Failed to load "${TTRPG_RULESET}": ${e.message} — using built-in 5e defaults.`);
@@ -71,7 +73,7 @@ const llm = createLlmClient();
 
 // ---- Agents ----
 
-const dmAgent = createDmAgent({ session, broadcast, applyAndBroadcast, llm, rulesetPrompt, actorTemplates: rulesetActorTemplates });
+const dmAgent = createDmAgent({ session, broadcast, applyAndBroadcast, llm, rulesetPrompt, actorTemplates: rulesetActorTemplates, defaultCheck: rulesetDefaultCheck });
 const npcAgent = createNpcAgent({ session, broadcast, applyAndBroadcast, llm });
 
 // ---- Quest + progression engine (deterministic, no LLM) ----
@@ -81,23 +83,28 @@ const questEngine = createQuestEngine({ session, broadcast, applyAndBroadcast })
 // ---- Combat Engine (structured encounters; deterministic, no LLM) ----
 // Combat awards kill-XP through the quest engine's shared awardXp.
 
-const combat = createCombatEngine({ session, broadcast, applyAndBroadcast, awardXp: questEngine.awardXp, rules: rulesetCombat, dmAgent, npcAgent });
+const combat = createCombatEngine({ session, broadcast, applyAndBroadcast, awardXp: questEngine.awardXp, rules: rulesetCombat, dmAgent, npcAgent, defaultCheck: rulesetDefaultCheck });
 
 // ---- Turn Engine ----
 
-const turnEngine = createTurnEngine({ session, broadcast, applyAndBroadcast, dmAgent, npcAgent, combat, questEngine, actorTemplates: rulesetActorTemplates });
+const turnEngine = createTurnEngine({ session, broadcast, applyAndBroadcast, dmAgent, npcAgent, combat, questEngine, actorTemplates: rulesetActorTemplates, defaultCheck: rulesetDefaultCheck });
 
 /**
  * After applying a batch of ops, fire the turn engine for any action ops.
- * Fire-and-forget (do NOT await) so the HTTP response / WS ack returns
- * immediately; narration streams over WS as it arrives.
+ * Fire-and-forget from the caller's perspective (the HTTP response / WS ack
+ * returns immediately; narration streams over WS as it arrives) — but turns
+ * are SERIALIZED through a per-session promise chain so two quick actions
+ * can never interleave mid-await and corrupt shared turn state.
  */
+let turnChain = Promise.resolve();
 function triggerTurns(ops, from) {
   for (const op of ops) {
     if (op.op === 'action' && op.text) {
-      turnEngine.runTurn(op).catch(err => {
-        console.error('[turn] Fire-and-forget error:', err.message);
-      });
+      turnChain = turnChain
+        .then(() => turnEngine.runTurn(op))
+        .catch(err => {
+          console.error('[turn] Turn error:', err.message);
+        });
     }
   }
 }
@@ -352,3 +359,12 @@ server.listen(TTRPG_PORT, () => {
   console.log(`[server] World: ${TTRPG_WORLD}`);
   console.log(`[server] Save slot: ${TTRPG_SAVE}`);
 });
+
+// Graceful shutdown: flush the debounced save so Ctrl-C never loses the last turn.
+for (const sig of ['SIGINT', 'SIGTERM']) {
+  process.on(sig, () => {
+    console.log(`\n[server] ${sig} — flushing save…`);
+    try { session.flushSave(); } catch (e) { console.error('[server] flush failed:', e.message); }
+    process.exit(0);
+  });
+}

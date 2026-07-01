@@ -48,8 +48,12 @@ export class SessionStore {
             if (op.component) {
               if (op.value === null || op.value === undefined) {
                 delete comps[op.component];
-              } else {
+              } else if (Array.isArray(op.value)) {
+                comps[op.component] = [...op.value];
+              } else if (typeof op.value === 'object') {
                 comps[op.component] = { ...op.value };
+              } else {
+                comps[op.component] = op.value;
               }
             }
             this._emit({ kind: 'set', id: op.id, component: op.component });

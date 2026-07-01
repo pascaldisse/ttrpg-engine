@@ -42,7 +42,7 @@ export const MOVE_INTENT_RE = /^\s*(?:(?:i(?:'d| would)?\s+(?:like|want|wish|lov
  * @param {object} params.npcAgent
  * @returns {{runTurn: (actionOp:object) => Promise<void>}}
  */
-export function createTurnEngine({ session, broadcast, applyAndBroadcast, dmAgent, npcAgent, combat, questEngine, actorTemplates }) {
+export function createTurnEngine({ session, broadcast, applyAndBroadcast, dmAgent, npcAgent, combat, questEngine, actorTemplates, defaultCheck }) {
   /**
    * Move the PC to a connected location, then narrate the arrival.
    * The move itself is engine-applied (deterministic, already canon) so we do
@@ -54,9 +54,8 @@ export function createTurnEngine({ session, broadcast, applyAndBroadcast, dmAgen
    */
   async function doMove(pcId, targetId, actionOp) {
     await applyConsequences([{ op: 'move', id: pcId, to: targetId }], session, applyAndBroadcast);
-    // Refresh the scene frame to the NEW location and narrate arrival.
-    session._lookCache = senseLook(session);
-    await dmAgent.narrateOutcome(actionOp, [], session._lookCache);
+    // Fresh scene frame for the NEW location; narrate arrival against it.
+    await dmAgent.narrateOutcome(actionOp, [], senseLook(session));
   }
 
   /**
@@ -85,8 +84,8 @@ export function createTurnEngine({ session, broadcast, applyAndBroadcast, dmAgen
     if (!actionText) return;
 
     try {
-      // 0. Cache the look frame for narrateOutcome (avoid re-computation)
-      session._lookCache = senseLook(session);
+      // 0. Turn-local scene frame (computed once; passed to the agents explicitly)
+      const lookText = senseLook(session);
 
       // 1. Get present agent-NPCs (already scoped to the PC's location)
       const presentNpcs = sensePresentAgents(session);
@@ -144,7 +143,7 @@ export function createTurnEngine({ session, broadcast, applyAndBroadcast, dmAgen
 
       // 3. Produce the DM's PROPOSED ruling through the seat-controller indirection
       //    (D5): a human/DMView injection wins; otherwise the 'ai' responder (LLM).
-      const { ruling, source } = await produceRuling(actionOp, presentNpcs);
+      const { ruling, source } = await produceRuling(actionOp, presentNpcs, lookText);
       emitTrace({ agent: 'dm', phase: 'adjudicate', by: source, summary: `${source === 'ai' ? '' : `(${source}) `}${summarizeRuling(ruling, actionText)}`, detail: ruling });
 
       // 3.1 GATE (DMView Slice 2): when paused (autopilot off), don't execute the ruling —
@@ -219,7 +218,7 @@ export function createTurnEngine({ session, broadcast, applyAndBroadcast, dmAgen
     const pcStats = (pcEntry && pcEntry[1].stats) || {};
     const pcProficiency = pcStats.proficiency || 2;
     const here = pcLocationId(session.entities);
-    session._lookCache = senseLook(session);
+    let lookText = senseLook(session);
 
     // 3.5 Movement decided by the LLM (natural-language backstop).
     if (pcId && ruling.move && ruling.move.to) {
@@ -246,25 +245,29 @@ export function createTurnEngine({ session, broadcast, applyAndBroadcast, dmAgen
     // spawned into the world NOW, before the prose describes it. Applied one at a
     // time so ids stay unique; the scene frame is refreshed so RENDER sees them.
     const spawnedIds = stageSpawns(ruling.spawns, here);
-    if (spawnedIds.length) session._lookCache = senseLook(session);
+    if (spawnedIds.length) lookText = senseLook(session);
 
     // 5. World action: resolve checks via ENGINE
     const checkResults = [];
     for (const checkReq of ruling.checks || []) {
       const rng = session.rng(); // deterministic, advances rollCount
+      // The ruleset's default check kind wins (necro-test / …); an explicit
+      // per-check kind from the ruling wins over that; bare 5e is the fallback.
+      const kind = checkReq.check || (defaultCheck && defaultCheck.kind) || 'ability-check';
+      const dcFallback = (defaultCheck && defaultCheck.dcDefault) || 12;
       const result = resolveCheck(
         {
-          check: 'ability-check',
+          check: kind,
           ability: checkReq.ability || 'wis',
           skill: checkReq.skill,
-          dc: checkReq.dc || 12,
+          dc: checkReq.dc || dcFallback,
           reason: checkReq.reason || '',
         },
         { stats: pcStats, proficiency: pcProficiency },
         rng,
       );
       result.reason = checkReq.reason || '';
-      result.def = (checkReq.skill || checkReq.ability || 'check');
+      result.def = (checkReq.skill || checkReq.ability || kind);
       checkResults.push(result);
 
       applyAndBroadcast([{
@@ -294,7 +297,7 @@ export function createTurnEngine({ session, broadcast, applyAndBroadcast, dmAgen
     }
 
     // 6. Narrate the outcome (grounded in the scene + the rolled results).
-    const narrationText = await dmAgent.narrateOutcome(actionOp, checkResults, session._lookCache);
+    const narrationText = await dmAgent.narrateOutcome(actionOp, checkResults, lookText);
 
     // 7. VALIDATE (demoted canonize): distill incidental changes into ops AND catch any
     // interactable actor the prose named that isn't grounded — the world-first backstop.
@@ -307,10 +310,23 @@ export function createTurnEngine({ session, broadcast, applyAndBroadcast, dmAgen
 
     // Grounding backstop: spawn any ungrounded named actor so no pure-text character
     // survives the turn. World-first should make this empty; a hit means RENDER strayed.
+    // An actor whose name overlaps an EXISTING entity ("the officiant" ≈ "Padre Salt"
+    // won't match, but "Padre" or "Salt" will) is the LLM re-describing someone present
+    // — never a reason to spawn a twin.
     const ungrounded = (canon && canon.actors) || [];
     if (ungrounded.length) {
+      const existingNames = [...session.entities.values()]
+        .map(c => ((c.identity || {}).name || '').toLowerCase())
+        .filter(Boolean);
+      const isKnown = (name) => {
+        const n = name.toLowerCase();
+        return existingNames.some(e =>
+          e === n || e.includes(n) || n.includes(e) ||
+          e.split(/\s+/).some(w => w.length > 2 && n.includes(w))
+        );
+      };
       const specs = ungrounded
-        .filter(a => a && typeof a === 'object' && a.name)
+        .filter(a => a && typeof a === 'object' && a.name && !isKnown(String(a.name)))
         .map(a => ({ archetype: a.archetype ? String(a.archetype) : undefined, name: String(a.name), hostile: a.hostile === true || undefined }));
       if (specs.length) {
         emitTrace({ agent: 'dm', phase: 'grounding', summary: `backstop: spawning ${specs.length} ungrounded actor(s) the prose named`, detail: specs });
@@ -365,14 +381,14 @@ export function createTurnEngine({ session, broadcast, applyAndBroadcast, dmAgen
    * ruling wins; else the 'ai' responder (the LLM) produces it. Same shape either way.
    * @returns {Promise<{ruling:object, source:string}>}
    */
-  async function produceRuling(actionOp, presentNpcs) {
+  async function produceRuling(actionOp, presentNpcs, lookText) {
     if (pendingDmRuling) {
       const ruling = pendingDmRuling;
       pendingDmRuling = null;
       const ctrl = dmSeatController();
       return { ruling, source: ctrl === 'ai' ? 'injected' : ctrl };
     }
-    const ruling = await dmAgent.adjudicate(actionOp, presentNpcs);
+    const ruling = await dmAgent.adjudicate(actionOp, presentNpcs, lookText);
     return { ruling, source: 'ai' };
   }
 
@@ -429,7 +445,7 @@ export function createTurnEngine({ session, broadcast, applyAndBroadcast, dmAgen
 
     if (action === 'regenerate') {
       const presentNpcs = sensePresentAgents(session);
-      const ruling = await dmAgent.adjudicate(pending.actionOp, presentNpcs);
+      const ruling = await dmAgent.adjudicate(pending.actionOp, presentNpcs, senseLook(session));
       const summary = summarizeRuling(ruling, pending.actionText);
       emitTrace({ agent: 'dm', phase: 'adjudicate', summary: `(regen) ${summary}`, detail: ruling });
       pendingProposals.set(id, { ...pending, ruling, summary });
@@ -465,7 +481,13 @@ async function applyConsequences(ops, session, applyAndBroadcast) {
   const canonicalOps = [];
 
   for (const op of ops) {
-    const expanded = expandOp(session.entities, op);
+    let expanded;
+    try {
+      expanded = expandOp(session.entities, op);
+    } catch (err) {
+      console.warn(`[turn] Skipping malformed consequence op ${op && op.op}: ${err.message}`);
+      continue;
+    }
     for (const canonOp of expanded) {
       // Guard: no despawn of pc or presence entities
       if (canonOp.op === 'despawn') {

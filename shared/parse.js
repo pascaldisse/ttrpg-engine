@@ -1,21 +1,21 @@
 /**
- * shared/parse.js — lenient model-output parser.
+ * shared/parse.js — lenient model-output JSON extractor.
  *
- * Tries strict JSON.parse, strips ```json fences, extracts first balanced {…},
- * then validates the basic shape (narration + ops + checks).
- * Reuses validateOpBatch from ops.js for op validation.
+ * Tries strict JSON.parse, strips ```json fences, extracts first balanced {…}.
+ * Returns the FULL parsed object untouched — no shape or op filtering here.
+ * Shape validation belongs to the caller's (permissive) Zod schema; op
+ * validation happens at the point of application, where a single bad op is
+ * skipped instead of nuking the whole ruling.
  *
  * PURE — no imports from server/ or client/.
  */
 
-import { validateOpBatch } from './ops.js';
-
 /**
- * Parse raw model output into a structured result.
+ * Extract a JSON object from raw model output.
  * Never throws — always returns {ok, value?, error?, raw}.
  *
  * @param {string} raw — the raw text from the LLM
- * @returns {{ok:boolean, value?:{narration?:string,ops?:object[],checks?:any[]}, error?:string, raw:string}}
+ * @returns {{ok:boolean, value?:object, error?:string, raw:string}}
  */
 export function parseModelOutput(raw) {
   const trimmed = (raw || '').trim();
@@ -35,7 +35,7 @@ export function parseModelOutput(raw) {
       try {
         parsed = JSON.parse(fenceMatch[1].trim());
       } catch (_2) {
-        // continue to regex extract
+        // continue to balanced extract
       }
     }
 
@@ -74,30 +74,5 @@ export function parseModelOutput(raw) {
     return { ok: false, error: 'Model output not parseable as JSON', raw: trimmed };
   }
 
-  // Validate shape
-  const narration = typeof parsed.narration === 'string' ? parsed.narration : undefined;
-  const checks = Array.isArray(parsed.checks) ? parsed.checks : [];
-  let ops = Array.isArray(parsed.ops) ? parsed.ops : [];
-
-  // Validate ops using the shared op validator
-  if (ops.length > 0) {
-    const validation = validateOpBatch(ops);
-    if (validation.ok) {
-      ops = validation.ops;
-    } else {
-      // Keep raw ops but flag the error
-      return {
-        ok: false,
-        error: `Op validation failed: ${validation.error}`,
-        raw: trimmed,
-        value: { narration, ops, checks },
-      };
-    }
-  }
-
-  return {
-    ok: true,
-    value: { narration, ops, checks },
-    raw: trimmed,
-  };
+  return { ok: true, value: parsed, raw: trimmed };
 }

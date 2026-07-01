@@ -8,10 +8,12 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { applyOp, isCanonOp } from '../shared/ops.js';
 import { makeRng } from '../shared/rng.js';
 
 const JOURNAL_CAP = 2000;
+const SAVE_VERSION = 1;
 
 export class Session {
   entities = new Map();       // id → { componentName: value }
@@ -24,7 +26,6 @@ export class Session {
   _seedDir = null;
   seed = 42;                 // PRNG seed (default 42; loaded from save)
   rollCount = 0;             // incremented per roll (ensures distinct rolls)
-  _lookCache = '';           // cached look text set by turn engine
 
   /**
    * @param {string} seedDir — path to world/ (campaign directory)
@@ -191,6 +192,13 @@ export class Session {
       }
     }
 
+    // Fingerprint the freshly seeded world so load() can detect a save written
+    // against DIFFERENT campaign content (edited scenes shadowed by a stale save).
+    const seeded = {};
+    for (const [id, comps] of [...this.entities.entries()].sort()) seeded[id] = comps;
+    this._worldFingerprint = crypto.createHash('sha1')
+      .update(JSON.stringify(seeded)).digest('hex').slice(0, 12);
+
     return campaign;
   }
 
@@ -238,6 +246,8 @@ export class Session {
   save() {
     if (!this._savePath) return;
     const data = {
+      version: SAVE_VERSION,
+      world: this._worldFingerprint || null,
       savedAt: new Date().toISOString(),
       counter: this.counter,
       seed: this.seed,
@@ -250,17 +260,36 @@ export class Session {
     fs.writeFileSync(this._savePath, JSON.stringify(data, null, 2), 'utf-8');
   }
 
-  /** Load canon overlay from session save. Overlays on top of seeded entities. */
+  /**
+   * Load canon overlay from session save. Overlays on top of seeded entities.
+   * A save written against a different save format OR different campaign content
+   * is NOT loaded — it is renamed to a .stale-<timestamp> backup and the world
+   * boots fresh (an edited campaign would otherwise be shadowed by old state).
+   */
   load() {
     if (!this._savePath || !fs.existsSync(this._savePath)) return;
     try {
       const data = JSON.parse(fs.readFileSync(this._savePath, 'utf-8'));
+
+      const versionOk = data.version === SAVE_VERSION;
+      const worldOk = !data.world || data.world === this._worldFingerprint;
+      if (!versionOk || !worldOk) {
+        const backup = this._savePath.replace(/\.json$/, `.stale-${Date.now()}.json`);
+        fs.renameSync(this._savePath, backup);
+        console.warn(
+          `[session] Save ${!versionOk ? `version ${data.version ?? 'none'} ≠ ${SAVE_VERSION}` : 'was written against different campaign content'}` +
+          ` — starting fresh (old save backed up to ${path.basename(backup)})`
+        );
+        return;
+      }
+
       if (data.counter > this.counter) this.counter = data.counter;
       if (data.seed !== undefined) this.seed = data.seed;
       if (data.rollCount !== undefined) this.rollCount = data.rollCount;
       for (const [id, comps] of Object.entries(data.entities || {})) {
         this.entities.set(id, JSON.parse(JSON.stringify(comps)));
       }
+      console.log(`[session] Resumed save "${path.basename(this._savePath)}" (${Object.keys(data.entities || {}).length} entities)`);
     } catch (e) {
       console.error('Session load error:', e.message);
     }

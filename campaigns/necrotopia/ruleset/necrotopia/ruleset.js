@@ -23,6 +23,14 @@ export const meta = {
   summary: 'd6 roll-OVER-Armor to hit + d6 damage. No attributes/skills; 3 custom Moves; GM-fiat.',
 };
 
+// The check the DM requests for generic narrative actions (and improvised combat
+// gambits). Without this, the engine would fall back to 5e d20 ability-checks.
+export const defaultCheck = {
+  kind: 'necro-test',
+  dcDoc: 'a difficulty from 1–6 (1=trivial, 3=risky, 4=hard, 6=near-impossible)',
+  dcDefault: 4,
+};
+
 // ---- tiny self-contained dice-string parser (keeps the bundle import-free) ----
 
 /** "2d6" → {count:2, sides:6}; unparseable → {count:1, sides:6}. */

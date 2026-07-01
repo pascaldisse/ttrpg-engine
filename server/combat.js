@@ -20,7 +20,7 @@ import {
   buildTimeline, advanceTimeline, projectQueue, enemyInstinct, moraleShaken, decisionToOps,
   hazardOps, zoneOf, zoneHasTag,
 } from '../shared/combat-rules.js';
-import { expandOp, expandOps } from '../shared/effects.js';
+import { expandOp } from '../shared/effects.js';
 import { tickStatuses } from '../shared/statuses.js';
 import { resolveCheck, formatCheckResult } from '../shared/checks.js';
 import { findPc, pcLocationId, entitiesAt } from '../shared/space.js';
@@ -31,7 +31,7 @@ const FLEE_RE = /\b(flee|run away|run|escape|retreat|disengage|get away|leg it|w
 const ENCOUNTER_ID = 'encounter';
 const MAX_TURN_GUARD = 100; // safety against any pathological loop
 
-export function createCombatEngine({ session, broadcast, applyAndBroadcast, awardXp, rules, dmAgent, npcAgent }) {
+export function createCombatEngine({ session, broadcast, applyAndBroadcast, awardXp, rules, dmAgent, npcAgent, defaultCheck }) {
   // Rules-as-data combat override (from the loaded ruleset bundle, or null → 5e default).
   const combatRules = rules || {};
 
@@ -183,10 +183,18 @@ export function createCombatEngine({ session, broadcast, applyAndBroadcast, awar
       || null;
   }
 
-  /** Apply a batch of (possibly semantic) ops via the expander. */
+  /** Apply a batch of (possibly semantic) ops via the expander. A malformed op
+   *  (LLM improv output) is skipped rather than nuking the batch. */
   function applyOps(ops) {
     if (!ops || !ops.length) return;
-    const expanded = expandOps(session.entities, ops);
+    const expanded = [];
+    for (const op of ops) {
+      try {
+        expanded.push(...expandOp(session.entities, op));
+      } catch (err) {
+        console.warn(`[combat] Skipping malformed op ${op && op.op}: ${err.message}`);
+      }
+    }
     if (expanded.length) applyAndBroadcast(expanded, 'combat');
   }
 
@@ -494,7 +502,12 @@ export function createCombatEngine({ session, broadcast, applyAndBroadcast, awar
     let success = true;
     for (const c of (ruling.checks || [])) {
       const result = resolveCheck(
-        { check: c.check || 'ability-check', ability: c.ability, skill: c.skill, dc: c.dc || 3, reason: c.reason || '' },
+        {
+          check: c.check || (defaultCheck && defaultCheck.kind) || 'ability-check',
+          ability: c.ability, skill: c.skill,
+          dc: c.dc || (defaultCheck && defaultCheck.dcDefault) || 12,
+          reason: c.reason || '',
+        },
         { stats: pcStats, proficiency },
         session.rng(),
       );
