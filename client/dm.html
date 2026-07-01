@@ -15,7 +15,7 @@
   <div class="max-w-7xl mx-auto p-4 flex flex-col gap-4 h-screen" style="max-height:100vh;">
 
     <!-- Top bar -->
-    <div class="flex items-center justify-between bg-gray-900 rounded-lg border border-gray-700 px-4 py-2">
+    <div class="flex items-center justify-between bg-gray-900 rounded-lg border border-gray-700 px-4 py-2 shrink-0">
       <div class="flex items-center gap-3">
         <span class="text-lg font-bold tracking-wide text-amber-300">DMView</span>
         <span id="dm-conn" class="text-xs text-gray-500">connecting…</span>
@@ -27,8 +27,20 @@
     </div>
 
     <div class="grid grid-cols-12 gap-4 flex-1 min-h-0">
-      <!-- Left: proposals + trace feed -->
-      <div class="col-span-7 flex flex-col gap-4 min-h-0">
+      <!-- Left: THE STORY (what players read) + stage-a-beat authoring -->
+      <div class="col-span-5 flex flex-col gap-4 min-h-0">
+        <div class="bg-gray-900 rounded-lg border border-gray-700 p-3 flex flex-col min-h-0 flex-1">
+          <h3 class="text-xs uppercase tracking-wider text-gray-500 mb-2">Story — what the players see</h3>
+          <div id="dm-story" class="flex-1 overflow-y-auto scroll text-sm min-h-0"></div>
+        </div>
+        <div class="bg-gray-900 rounded-lg border border-indigo-900/60 p-3 shrink-0">
+          <h3 class="text-xs uppercase tracking-wider text-indigo-400/80 mb-2">Stage a beat — you author the next ruling</h3>
+          <div id="dm-stage" class="flex flex-col gap-1.5"></div>
+        </div>
+      </div>
+
+      <!-- Middle: proposals + agent activity -->
+      <div class="col-span-4 flex flex-col gap-4 min-h-0">
         <div class="bg-gray-900 rounded-lg border border-gray-700 p-3 flex flex-col min-h-0 flex-1">
           <h3 class="text-xs uppercase tracking-wider text-gray-500 mb-2">Proposals</h3>
           <div id="dm-proposals" class="flex flex-col gap-2 overflow-y-auto scroll"></div>
@@ -40,8 +52,8 @@
       </div>
 
       <!-- Right: turn order + entity inspector -->
-      <div class="col-span-5 flex flex-col gap-4 min-h-0">
-        <div class="bg-gray-900 rounded-lg border border-gray-700 p-3">
+      <div class="col-span-3 flex flex-col gap-4 min-h-0">
+        <div class="bg-gray-900 rounded-lg border border-gray-700 p-3 shrink-0 max-h-[45%] overflow-y-auto scroll">
           <h3 class="text-xs uppercase tracking-wider text-gray-500 mb-2">Turn order</h3>
           <div id="dm-turnorder" class="flex flex-col gap-1 text-sm"></div>
         </div>

@@ -374,7 +374,25 @@ export function createTurnEngine({ session, broadcast, applyAndBroadcast, dmAgen
   // action; a queued human beat takes precedence over the LLM (co-drive: human wins).
   let pendingDmRuling = null;
   function injectDmRuling(ruling) {
-    pendingDmRuling = { ...defaultRuling(), ...(ruling || {}) };
+    const next = { ...defaultRuling(), ...(ruling || {}) };
+    // Same normalization the LLM path gets in adjudicate(): expand count× and
+    // drop malformed specs, so a DMView-staged beat behaves identically.
+    if (Array.isArray(next.spawns)) {
+      const out = [];
+      for (const s of next.spawns) {
+        if (!s || typeof s !== 'object') continue;
+        const n = Math.max(1, Math.min(8, Math.round(Number(s.count) || 1)));
+        const spec = {
+          archetype: s.archetype ? String(s.archetype) : undefined,
+          name: s.name ? String(s.name) : undefined,
+          hostile: s.hostile === true || undefined,
+          ally: s.ally === true || undefined,
+        };
+        for (let i = 0; i < n; i++) out.push({ ...spec });
+      }
+      next.spawns = out;
+    }
+    pendingDmRuling = next;
   }
 
   /**

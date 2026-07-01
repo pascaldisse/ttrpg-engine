@@ -2,14 +2,18 @@
  * client/kernel/dm-view.js — the DMView surface (DM seat).
  *
  * Renders the DM control panels from the same store + WS the player client uses:
+ *   - Story: the live transcript (narration / dialogue / rolls / actions) — the
+ *     DM reads exactly what the players are being told
  *   - Autopilot toggle (pause/run the propose→commit gate)
  *   - Proposals: pending LLM beats with approve / reject / regenerate + reveal-detail
+ *   - Stage a beat: author the DM's next ruling by hand (spawns / combat / checks /
+ *     NPC line) — queued for the next player action via dm-control {action:'stage'}
  *   - Agent activity: DM-only trace events (decisions / tool calls), reveal-detail
- *   - Turn order: combat initiative with reorder / set-current overrides
+ *   - Turn order: works for BOTH initiative and CTB-timeline combat, with overrides
  *   - Entities (full): the god-mode inspector — the DM is who SHOULD see everything
  *
- * Store events drive the autopilot/turn-order/entity panels; non-store WS messages
- * (proposal / trace / proposal-resolved) arrive via handleServer().
+ * Store events drive the panels; non-store WS messages (proposal / trace /
+ * proposal-resolved) arrive via handleServer().
  */
 
 import { el, clear } from './dom.js';
@@ -21,12 +25,15 @@ export class DMView {
 
     this.proposals = new Map(); // id → {id, actionText, summary, ruling}
     this.traces = [];           // recent trace events (capped)
+    this._streamEls = new Map();
 
     this.autopilotEl = document.getElementById('dm-autopilot');
     this.proposalsEl = document.getElementById('dm-proposals');
     this.tracesEl = document.getElementById('dm-traces');
     this.turnOrderEl = document.getElementById('dm-turnorder');
     this.entitiesEl = document.getElementById('dm-entities');
+    this.storyEl = document.getElementById('dm-story');
+    this.stageEl = document.getElementById('dm-stage');
 
     if (this.autopilotEl) {
       this.autopilotEl.addEventListener('click', () => {
@@ -34,7 +41,13 @@ export class DMView {
       });
     }
 
-    store.onChange(() => this._renderStorePanels());
+    this._renderStageForm();
+
+    store.onChange((event) => {
+      if (event.kind === 'event') { this._handleStoryEvent(event.name, event.data); return; }
+      if (event.kind === 'action') { this._appendStory(this._actionLine(event)); return; }
+      this._renderStorePanels();
+    });
   }
 
   // ---- Server (non-store) messages ----
@@ -64,6 +77,88 @@ export class DMView {
     this._renderEntities();
     const conn = document.getElementById('dm-conn');
     if (conn) conn.textContent = `${this.store.entities.size} entities`;
+  }
+
+  // ---- Story transcript (what the players are being told) ----
+
+  /** Replay journal history (GET /events) so a late-joining DM reads the whole story. */
+  backfill(entries) {
+    if (!Array.isArray(entries)) return;
+    for (const e of entries) {
+      if (e.op === 'action' && e.text) this._appendStory(this._actionLine(e));
+      else if (e.op === 'event' && (e.data || {}).text) this._handleStoryEvent(e.name, { ...e.data, done: true, delta: undefined });
+    }
+  }
+
+  _actionLine(e) {
+    return el('div', { className: 'py-0.5 text-right' }, [
+      el('span', { className: 'text-[11px] text-blue-400/80 mr-1' }, [`${e.by || 'player'}:`]),
+      el('span', { className: 'text-blue-100/90' }, [e.text || '']),
+    ]);
+  }
+
+  _handleStoryEvent(name, data) {
+    if (!this.storyEl || !data) return;
+    // HUD-only noise (timeline projections, meter ticks) stays out of the story.
+    if ((data.kind === 'combat' && data.phase === 'timeline') || data.kind === 'meter') return;
+
+    // Streaming: accumulate deltas per streamId, replace on done.
+    if (data.streamId) {
+      const existing = this._streamEls.get(data.streamId);
+      if (data.done) {
+        if (existing) { existing.line.remove(); this._streamEls.delete(data.streamId); }
+        this._appendStory(this._storyLine(name, { ...data, text: data.text || (existing ? existing.text : '') }));
+        return;
+      }
+      if (data.delta) {
+        if (existing) {
+          existing.text += data.delta;
+          existing.textEl.textContent = existing.text;
+        } else {
+          const line = this._storyLine(name, { ...data, text: data.delta });
+          const textEl = line.querySelector('[data-story-text]');
+          this._appendStory(line);
+          this._streamEls.set(data.streamId, { line, textEl, text: data.delta });
+        }
+        this._scrollStory();
+      }
+      return;
+    }
+    this._appendStory(this._storyLine(name, data));
+  }
+
+  _storyLine(name, data) {
+    if (name === 'dialogue') {
+      return el('div', { className: 'py-0.5' }, [
+        el('span', { className: 'text-[11px] font-semibold mr-1', style: `color:${data.accent || '#4a9eff'}` }, [`${data.name || data.by || 'NPC'}:`]),
+        el('span', { className: 'text-gray-200', 'data-story-text': '' }, [data.text || '']),
+      ]);
+    }
+    if (name === 'system') {
+      const detail = data.detail || {};
+      const ok = detail.success;
+      const cls = data.kind === 'roll'
+        ? (ok === true ? 'text-green-400/70' : ok === false ? 'text-red-400/70' : 'text-gray-500')
+        : 'text-gray-500';
+      return el('div', { className: 'py-0.5 text-center' }, [
+        el('span', { className: `text-[11px] ${cls}`, 'data-story-text': '' }, [data.text || '']),
+      ]);
+    }
+    // narration
+    return el('div', { className: 'py-1' }, [
+      el('span', { className: 'text-[10px] uppercase tracking-wider text-amber-500/70 mr-1' }, ['dm']),
+      el('span', { className: 'text-gray-300 italic', 'data-story-text': '' }, [data.text || '']),
+    ]);
+  }
+
+  _appendStory(lineEl) {
+    if (!this.storyEl) return;
+    this.storyEl.appendChild(lineEl);
+    this._scrollStory();
+  }
+
+  _scrollStory() {
+    if (this.storyEl) this.storyEl.scrollTop = this.storyEl.scrollHeight;
   }
 
   // ---- Autopilot ----
@@ -114,6 +209,90 @@ export class DMView {
     if (this.net) this.net.sendControl({ action, proposalId: id });
   }
 
+  // ---- Stage a beat (human DM authors the next ruling) ----
+
+  _renderStageForm() {
+    if (!this.stageEl) return;
+    clear(this.stageEl);
+
+    const input = (id, placeholder, extra = '') => el('input', {
+      id, placeholder,
+      className: `bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500 ${extra}`,
+    });
+
+    const spawnRow = el('div', { className: 'flex gap-1 items-center flex-wrap' }, [
+      el('span', { className: 'text-[10px] uppercase text-gray-500 w-14' }, ['spawn']),
+      input('stage-archetype', 'archetype', 'w-24'),
+      input('stage-name', 'name (opt)', 'w-24'),
+      input('stage-count', '×1', 'w-10'),
+      el('label', { className: 'text-[11px] text-gray-400 flex items-center gap-1' }, [
+        el('input', { id: 'stage-hostile', type: 'checkbox' }), 'hostile',
+      ]),
+      el('label', { className: 'text-[11px] text-gray-400 flex items-center gap-1' }, [
+        el('input', { id: 'stage-ally', type: 'checkbox' }), 'ally',
+      ]),
+    ]);
+
+    const checkRow = el('div', { className: 'flex gap-1 items-center flex-wrap' }, [
+      el('span', { className: 'text-[10px] uppercase text-gray-500 w-14' }, ['check']),
+      input('stage-check-dc', 'dc', 'w-12'),
+      input('stage-check-reason', 'reason (leave dc empty for none)', 'flex-1'),
+    ]);
+
+    const speakRow = el('div', { className: 'flex gap-1 items-center' }, [
+      el('span', { className: 'text-[10px] uppercase text-gray-500 w-14' }, ['npc says']),
+      input('stage-speakto', 'npc id (e.g. npc-padre)', 'w-36'),
+      input('stage-note', 'director note for the NPC', 'flex-1'),
+    ]);
+
+    const combatRow = el('div', { className: 'flex gap-2 items-center' }, [
+      el('span', { className: 'text-[10px] uppercase text-gray-500 w-14' }, ['combat']),
+      el('label', { className: 'text-[11px] text-gray-400 flex items-center gap-1' }, [
+        el('input', { id: 'stage-begincombat', type: 'checkbox' }), 'begin combat with staged hostiles',
+      ]),
+    ]);
+
+    const status = el('div', { id: 'stage-status', className: 'text-[11px] text-gray-600 italic' }, ['']);
+
+    const sendBtn = this._btn('Stage for next action', 'bg-indigo-700 hover:bg-indigo-600', () => {
+      const v = (id) => (document.getElementById(id) || {}).value || '';
+      const c = (id) => !!(document.getElementById(id) || {}).checked;
+      const ruling = {};
+
+      const archetype = v('stage-archetype').trim();
+      if (archetype) {
+        ruling.spawns = [{
+          archetype,
+          name: v('stage-name').trim() || undefined,
+          hostile: c('stage-hostile') || undefined,
+          ally: c('stage-ally') || undefined,
+          count: Math.max(1, parseInt(v('stage-count'), 10) || 1),
+        }];
+      }
+      const dc = parseInt(v('stage-check-dc'), 10);
+      if (Number.isFinite(dc)) ruling.checks = [{ dc, reason: v('stage-check-reason').trim() || 'DM-staged check' }];
+      const speakTo = v('stage-speakto').trim();
+      if (speakTo) { ruling.speakTo = speakTo; ruling.note = v('stage-note').trim(); }
+      if (c('stage-begincombat')) ruling.beginCombat = true;
+
+      if (!Object.keys(ruling).length) {
+        status.textContent = 'nothing to stage — fill a row first';
+        return;
+      }
+      this.net && this.net.sendControl({ action: 'stage', ruling });
+      status.textContent = '✓ staged — it resolves on the NEXT player action (instead of the LLM)';
+      for (const id of ['stage-archetype', 'stage-name', 'stage-count', 'stage-check-dc', 'stage-check-reason', 'stage-speakto', 'stage-note']) {
+        const n = document.getElementById(id); if (n) n.value = '';
+      }
+      for (const id of ['stage-hostile', 'stage-ally', 'stage-begincombat']) {
+        const n = document.getElementById(id); if (n) n.checked = false;
+      }
+    });
+
+    this.stageEl.append(spawnRow, checkRow, speakRow, combatRow,
+      el('div', { className: 'flex items-center gap-2 mt-1' }, [sendBtn, status]));
+  }
+
   // ---- Trace feed ----
 
   _renderTraces() {
@@ -132,7 +311,7 @@ export class DMView {
     }
   }
 
-  // ---- Turn order (combat) ----
+  // ---- Turn order (combat — BOTH initiative and CTB-timeline modes) ----
 
   _renderTurnOrder() {
     if (!this.turnOrderEl) return;
@@ -140,27 +319,65 @@ export class DMView {
 
     const enc = this.store.entities.get('encounter');
     const e = enc && enc.encounter;
-    if (!e || !e.active || !(e.order || []).length) {
+    if (!e || !e.active) {
       this.turnOrderEl.appendChild(el('div', { className: 'text-sm text-gray-600 italic' }, ['No active combat.']));
       return;
     }
 
-    const order = e.order || [];
     const enemies = new Set(e.enemies || []);
+    const nameOf = (id) => ((this.store.entities.get(id) || {}).identity || {}).name || id;
+
+    if (e.mode === 'timeline') {
+      // CTB: participants carry {id, time, speed}; lowest time acts (turnOf).
+      const parts = [...(e.participants || [])].sort((a, b) => (a.time || 0) - (b.time || 0));
+      this.turnOrderEl.appendChild(el('div', { className: 'text-[10px] text-gray-500 mb-1' },
+        [`Round ${e.round} · timeline (lowest time acts) · ▶ act now · +1 delay`]));
+      for (const p of parts) {
+        const cur = p.id === e.turnOf;
+        const isEnemy = enemies.has(p.id);
+        const dead = ((this.store.entities.get(p.id) || {}).status || {}).alive === false;
+        this.turnOrderEl.appendChild(el('div', {
+          className: `flex items-center gap-2 p-1 rounded ${cur ? 'bg-gray-700 border border-yellow-600' : ''} ${dead ? 'opacity-40' : ''}`,
+        }, [
+          el('span', { className: 'text-[10px] text-gray-500 w-10' }, [`t=${p.time ?? 0}`]),
+          el('span', { className: `flex-1 ${isEnemy ? 'text-red-300' : 'text-blue-300'}` }, [nameOf(p.id) + (cur ? ' ◀' : '')]),
+          this._miniBtn('▶', () => this._timelineActNow(p.id)),
+          this._miniBtn('+1', () => this._timelineDelay(e, p.id)),
+        ]));
+      }
+      return;
+    }
+
+    const order = e.order || [];
+    if (!order.length) {
+      this.turnOrderEl.appendChild(el('div', { className: 'text-sm text-gray-600 italic' }, ['Combat active — no turn list.']));
+      return;
+    }
     order.forEach((id, i) => {
-      const comps = this.store.entities.get(id) || {};
-      const name = (comps.identity || {}).name || id;
       const cur = i === e.turnIndex;
       const isEnemy = enemies.has(id);
       const row = el('div', { className: `flex items-center gap-2 p-1 rounded ${cur ? 'bg-gray-700 border border-yellow-600' : ''}` }, [
         el('span', { className: 'text-xs text-gray-500 w-5' }, [String(i + 1)]),
-        el('span', { className: `flex-1 ${isEnemy ? 'text-red-300' : 'text-blue-300'}` }, [name + (cur ? ' ◀' : '')]),
+        el('span', { className: `flex-1 ${isEnemy ? 'text-red-300' : 'text-blue-300'}` }, [nameOf(id) + (cur ? ' ◀' : '')]),
         this._miniBtn('▲', () => this._reorder(order, i, i - 1)),
         this._miniBtn('▼', () => this._reorder(order, i, i + 1)),
         this._miniBtn('▶', () => this._setCurrent(i)),
       ]);
       this.turnOrderEl.appendChild(row);
     });
+  }
+
+  /** Timeline override: this combatant acts NOW. */
+  _timelineActNow(id) {
+    if (this.net) this.net.sendOps([{ op: 'merge', id: 'encounter', component: 'encounter', value: { turnOf: id } }]);
+  }
+
+  /** Timeline override: push a combatant's next act one tick later. */
+  _timelineDelay(e, id) {
+    if (!this.net) return;
+    const participants = (e.participants || []).map(p =>
+      p.id === id ? { ...p, time: (p.time || 0) + 1 } : p);
+    this.net.sendOps([{ op: 'merge', id: 'encounter', component: 'encounter', value: { participants } }]);
   }
 
   _reorder(order, i, j) {
