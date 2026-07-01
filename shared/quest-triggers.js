@@ -1,5 +1,5 @@
 /**
- * shared/quests.js — quest trigger evaluation + pending advance computation.
+ * shared/quest-triggers.js — quest trigger evaluation + pending advance computation.
  *
  * PURE — no imports from server/ or client/. Operates on an entities Map
  * (or plain object) of { id → { componentName: value } }.

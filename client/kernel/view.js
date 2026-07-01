@@ -580,14 +580,6 @@ export class View {
     return entry;
   }
 
-  // ---- Legacy narration (back-compat for P0/P1 if they use narration-entries) ----
-
-  _handleNarration(data) {
-    if (!this.narrationEntriesEl) return;
-    // Forward to the new streaming handler
-    this._handleStreamingEvent(data, 'narration');
-  }
-
   // ---- Helpers ----
 
   /**

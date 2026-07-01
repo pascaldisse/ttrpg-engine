@@ -1,5 +1,5 @@
 /**
- * shared/combat.js — P5 pure combat engine.
+ * shared/combat-rules.js — pure combat engine.
  *
  * PURE — no imports from server/ or client/. Takes plain data + an rng; returns plain data.
  * NEVER mutates inputs. NEVER emits ops — the server layer turns results into ops.
@@ -514,17 +514,6 @@ export function zoneHasTag(encounter, zoneId, tag) {
   return !!(z && Array.isArray(z.tags) && z.tags.includes(tag));
 }
 
-/**
- * Is a Move in range from actor to target given their zones? PURE.
- *   self/any → always; melee → same zone; ranged/area → any zone.
- * Range is read from move.range, defaulted by move.type.
- */
-export function inRange(move, actorId, targetId, entities) {
-  const range = move.range || (move.type === 'area' ? 'area' : (move.type === 'heal' || move.type === 'buff' || move.type === 'utility') ? 'self' : 'melee');
-  if (range === 'self' || range === 'any' || range === 'ranged' || range === 'area') return true;
-  // melee: must share a zone
-  return zoneOf(entities, actorId) === zoneOf(entities, targetId);
-}
 
 /**
  * Hazard ticks for one combatant at turn start: every hazard in their zone whose kind

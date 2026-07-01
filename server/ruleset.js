@@ -24,7 +24,7 @@ import { registerStatuses } from '../shared/statuses.js';
  * 5. return { meta, systemPrompt, components, checks, combat }
  *
  * `combat` (optional bundle export) is the rules-as-data combat override consumed
- * by the combat engine — see shared/combat.js. null when the bundle ships none.
+ * by the combat engine — see shared/combat-rules.js. null when the bundle ships none.
  *
  * @param {string} id — ruleset id (e.g. 'srd5e', 'dsa5', 'necrotopia')
  * @param {string} worldDir — absolute path to the world/ directory

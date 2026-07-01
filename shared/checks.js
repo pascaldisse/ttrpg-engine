@@ -204,16 +204,6 @@ export function resolveCheck(checkDef, ctx, rng) {
   return def.resolve(rolls, mod, dc, def, { ...ctx, ...checkDef });
 }
 
-/**
- * Convenience: resolve a check with a fresh seeded RNG.
- * @param {object} checkDef
- * @param {object} ctx
- * @param {number} seed
- */
-export function resolveCheckWithSeed(checkDef, ctx, seed) {
-  const rng = makeRng(seed);
-  return resolveCheck(checkDef, ctx, rng);
-}
 
 /**
  * Build a formatted display string for a check result.

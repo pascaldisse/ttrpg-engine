@@ -16,7 +16,7 @@ import fs from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { makeRng } from '../shared/rng.js';
 import { resolveCheck, registerChecks } from '../shared/checks.js';
-import { resolveAttack, buildTimeline, nextActor, projectQueue } from '../shared/combat.js';
+import { resolveAttack, buildTimeline, nextActor, projectQueue } from '../shared/combat-rules.js';
 import { registerComponents } from '../shared/schema.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));

@@ -78,17 +78,6 @@ function nameOf(entities, id) {
 
 // ---- public API ----
 
-/**
- * Build the semantic op(s) that apply a status to a target. Returns an `applyStatus`
- * semantic op (expanded by shared/effects.js into a merge of statuses.list).
- * @returns {object[]} Op[]
- */
-export function applyStatus(_entities, targetId, { kind, magnitude, remaining, source }) {
-  const op = { op: 'applyStatus', id: targetId, kind, remaining: remaining ?? 1 };
-  if (magnitude != null) op.magnitude = magnitude;
-  if (source != null) op.source = source;
-  return [op];
-}
 
 /**
  * Tick all statuses on a combatant at the START of their turn:

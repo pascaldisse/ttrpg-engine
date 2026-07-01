@@ -237,14 +237,6 @@ const SEMANTIC_HANDLERS = {
   },
 };
 
-/**
- * Check if an op is semantic (must be expanded before apply).
- * @param {object} op
- * @returns {boolean}
- */
-export function isSemanticOp(op) {
-  return op.op in SEMANTIC_HANDLERS;
-}
 
 /**
  * Get the set of supported semantic op types (for the LLM prompt).

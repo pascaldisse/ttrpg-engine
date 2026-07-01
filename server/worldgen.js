@@ -2,7 +2,7 @@
  * server/worldgen.js — P8 "charge with meaning" pass + writer.
  *
  * Stage 2 of world generation. Takes the PURE procgen skeleton from
- * shared/worldgen.js (a connected location graph with placeholder names) and
+ * shared/worldgen-skeleton.js (a connected location graph with placeholder names) and
  * uses an LlmClient to fill in identity (name/description), persona, knowledge,
  * and art prompts — turning generic slots into a coherent themed world. Then
  * validates referential integrity and writes a scene JSON in the exact shape the
@@ -20,7 +20,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
-import { generateSkeleton } from '../shared/worldgen.js';
+import { generateSkeleton } from '../shared/worldgen-skeleton.js';
 import { validateWorld } from '../shared/worldcheck.js';
 import { makeRng } from '../shared/rng.js';
 

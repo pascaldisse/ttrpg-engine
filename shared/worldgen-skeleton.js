@@ -1,5 +1,5 @@
 /**
- * shared/worldgen.js — PURE deterministic world skeleton generator (Module A).
+ * shared/worldgen-skeleton.js — PURE deterministic world skeleton generator (Module A).
  *
  * Generates a connected, bidirectional location graph populated with a PC,
  * friendly NPCs, hostile enemies, items, and one quest wired to real ids.

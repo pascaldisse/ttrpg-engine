@@ -7,9 +7,7 @@
  */
 
 import { z } from 'zod';
-import { buildDmNarrationContext, buildDmRoutingContext } from '../../shared/context.js';
 import { streamBeat } from './stream-beat.js';
-import { semanticOpTypes } from '../../shared/effects.js';
 import { look as senseLook } from '../sense.js';
 
 // ---- 5e system prompt for the DM (narration voice) ----
@@ -109,13 +107,6 @@ Examples:
 
 Respond with JSON ONLY: {"ops":[...],"actors":[...]}.`;
 
-// ---- Routing result schema ----
-
-const routingSchema = z.object({
-  targets: z.array(z.string()).default([]),
-  note: z.string().optional().default(''),
-});
-
 // ---- Adjudication result schema (P3) ----
 
 const checkRequestSchema = z.object({
@@ -160,7 +151,7 @@ let streamCounter = 0;
  * @param {(msg:object)=>void} params.broadcast
  * @param {(ops:object[], from:string)=>object} params.applyAndBroadcast
  * @param {object} params.llm — LlmClient
- * @returns {{narrate, route, adjudicate, narrateOutcome}}
+ * @returns {{adjudicate, narrateOutcome, canonize, adjudicateCombat}}
  */
 export function createDmAgent({ session, broadcast, applyAndBroadcast, llm, rulesetPrompt, actorTemplates }) {
   // The DM narration voice comes from the loaded ruleset (P7) when present,
@@ -172,74 +163,6 @@ export function createDmAgent({ session, broadcast, applyAndBroadcast, llm, rule
   const spawnArchetypes = actorTemplates
     ? Object.keys(actorTemplates).filter((k) => k !== '_default')
     : [];
-
-  /**
-   * DM world-voice narration (P1-P2 fallback; used for ambient/look actions).
-   * @param {object} actionOp — {op:'action', text, by}
-   * @returns {Promise<string>} — the full narration text
-   */
-  async function narrate(actionOp) {
-    const actionText = actionOp.text || '';
-
-    const messages = buildDmNarrationContext({
-      systemPrompt,
-      session,
-      action: actionText,
-    });
-
-    const streamId = `narr-${++streamCounter}`;
-
-    return streamBeat({
-      llm,
-      messages,
-      eventName: 'narration',
-      baseData: { by: 'dm' },
-      broadcast,
-      applyAndBroadcast,
-      role: 'dm',
-      streamId,
-    });
-  }
-
-  /**
-   * LLM routing call — only for the ambiguous case (2+ NPCs, no @mention).
-   * Returns {targets, note} validated against the routing Zod schema.
-   * On failure, defaults to the first present NPC.
-   *
-   * @param {object} actionOp — {op:'action', text, by}
-   * @param {Array} presentNpcs — from sense.presentAgents()
-   * @returns {Promise<{targets:string[], note:string}>}
-   */
-  async function route(actionOp, presentNpcs) {
-    const actionText = actionOp.text || '';
-
-    const messages = buildDmRoutingContext({
-      presentNpcs,
-      session,
-      action: actionText,
-    });
-
-    try {
-      const { parsed } = await llm.structured(messages, routingSchema, {
-        user: sessionId,
-        role: 'routing',
-      });
-      // Validate targets reference actual present NPCs
-      const validTargets = (parsed.targets || [])
-        .filter(t => presentNpcs.some(n => n.npcId === t));
-      return {
-        targets: validTargets.length > 0 ? validTargets : [presentNpcs[0]?.npcId].filter(Boolean),
-        note: parsed.note || '',
-      };
-    } catch (err) {
-      console.error('[dm-agent] Routing call failed:', err.message);
-      // Default to first present NPC
-      return {
-        targets: presentNpcs.length > 0 ? [presentNpcs[0].npcId] : [],
-        note: '',
-      };
-    }
-  }
 
   /**
    * Adjudicate: structured LLM call to decide routing, checks, and consequences.
@@ -486,7 +409,7 @@ export function createDmAgent({ session, broadcast, applyAndBroadcast, llm, rule
     }
   }
 
-  return { narrate, route, adjudicate, narrateOutcome, canonize, adjudicateCombat };
+  return { adjudicate, narrateOutcome, canonize, adjudicateCombat };
 }
 
 /** Build the adjudicate system prompt with dynamic scene/PC info injected. */

@@ -1,7 +1,7 @@
 /**
  * server/combat.js — P5 structured combat orchestrator (the encounter handoff).
  *
- * The pure rules live in shared/combat.js. This module wires them into the live
+ * The pure rules live in shared/combat-rules.js. This module wires them into the live
  * session: it starts encounters, drives the floor/turn system (enemy AI turns
  * auto-resolve; the player's turn pauses for input), applies damage as ops, and
  * ends on victory/defeat/flee.
@@ -19,7 +19,7 @@ import {
   buildEncounter, currentCombatant, resolveAttack, resolveMove, advanceTurn, outcome,
   buildTimeline, advanceTimeline, projectQueue, enemyInstinct, moraleShaken, decisionToOps,
   hazardOps, zoneOf, zoneHasTag,
-} from '../shared/combat.js';
+} from '../shared/combat-rules.js';
 import { expandOp, expandOps } from '../shared/effects.js';
 import { tickStatuses } from '../shared/statuses.js';
 import { resolveCheck, formatCheckResult } from '../shared/checks.js';

@@ -301,33 +301,6 @@ export function applyOp(entities, op, counterRef) {
 
 // ---- $-token substitution ----
 
-/**
- * Recursively substitute $id / $now tokens in an op.
- * Used by triggers and scripted encounters to template ops.
- *
- * @param {object} op — the op to substitute into (mutated via structuredClone first)
- * @param {{$id?:string, $now?:number}} vars
- * @returns {object} — the substituted op
- */
-export function substitute(op, vars) {
-  const result = structuredClone(op);
-
-  function walk(obj) {
-    if (typeof obj !== 'object' || obj === null) return;
-    for (const key of Object.keys(obj)) {
-      const val = obj[key];
-      if (typeof val === 'string') {
-        if (val === '$id' && vars.$id !== undefined) obj[key] = vars.$id;
-        else if (val === '$now' && vars.$now !== undefined) obj[key] = vars.$now;
-      } else if (typeof val === 'object') {
-        walk(val);
-      }
-    }
-  }
-
-  walk(result);
-  return result;
-}
 
 /**
  * Check if an op kind mutates entity state (canon).
@@ -336,13 +309,3 @@ export function isCanonOp(op) {
   return ['spawn', 'set', 'merge', 'despawn'].includes(op.op);
 }
 
-/**
- * Quick schema accessibility: build a Zod validator for op batches from the declarative SCHEMA.
- * Used by the server to validate LLM-produced ops against the current schema.
- */
-export function buildZod() {
-  // The declarative SCHEMA already drives the op shape schemas above.
-  // For P0, validateOpBatch uses the fixed op shapes.
-  // Future: derive field-level constraints from SCHEMA fields (range, enum).
-  return { validateOpBatch, validateOp };
-}

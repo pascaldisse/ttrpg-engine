@@ -1,7 +1,7 @@
 /**
  * server/quests.js — quest + progression orchestrator.
  *
- * The pure rules live in shared/quests.js (trigger evaluation) and
+ * The pure rules live in shared/quest-triggers.js (trigger evaluation) and
  * shared/progression.js (XP/leveling). This module wires them into the live
  * session: after every player turn `evaluate()` advances/completes quests whose
  * current-step trigger is now satisfied, grants rewards (XP + items) as ops, and
@@ -11,7 +11,7 @@
  * completion also emits a deterministic DM-voice narration line.
  */
 
-import { pendingAdvances } from '../shared/quests.js';
+import { pendingAdvances } from '../shared/quest-triggers.js';
 import { applyXp } from '../shared/progression.js';
 import { expandOp } from '../shared/effects.js';
 import { findPc } from '../shared/space.js';

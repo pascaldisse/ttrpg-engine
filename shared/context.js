@@ -9,41 +9,6 @@
 
 import { findPc, pcLocationId, entitiesAt, exitsFrom } from './space.js';
 
-/**
- * Build an ordered chat-message array for cache-friendly streaming.
- *
- * Order (DeepSeek caches prefixes from token 0):
- * 1. {role:'system', content: systemPrompt}   — BYTE-STABLE across turns
- * 2. Recent history (alternating user/assistant)
- * 3. {role:'system', content: look}            — current scene frame (changes → late)
- * 4. {role:'user', content: action}            — player's action (last)
- *
- * @param {object} params
- * @param {string} params.systemPrompt — byte-stable ruleset system prompt
- * @param {string} params.look        — current scene frame text (from buildLookFrame)
- * @param {Array<{role:string,content:string}>} [params.history] — recent turns
- * @param {string} params.action      — the player's action text
- * @returns {Array<{role:string, content:string}>}
- */
-export function buildContext({ systemPrompt, look, history = [], action }) {
-  const messages = [];
-
-  // Byte-stable system prompt at token 0 → cache hit every turn
-  messages.push({ role: 'system', content: systemPrompt });
-
-  // Rolling window of recent turns (alternating)
-  for (const entry of history) {
-    messages.push(entry);
-  }
-
-  // Current scene frame (changes per turn → placed after stable prefix)
-  messages.push({ role: 'system', content: look });
-
-  // Player's action (always last)
-  messages.push({ role: 'user', content: action });
-
-  return messages;
-}
 
 /**
  * Build a compact text "scene frame" from the entity store — LOCATION-SCOPED.
@@ -300,53 +265,3 @@ function formatKnowledge(knowledge) {
 
   return parts.join('\n');
 }
-
-/**
- * Build context messages for the DM's world-voice narration.
- * Reuses the existing buildContext ordering: stable prefix + look + history + action.
- *
- * @param {object} params
- * @param {string} params.systemPrompt   — DM system prompt
- * @param {object} params.session        — Session instance
- * @param {string} params.action         — player action text
- * @returns {Array<{role:string, content:string}>}
- */
-export function buildDmNarrationContext({ systemPrompt, session, action }) {
-  return buildContext({
-    systemPrompt,
-    look: buildLookFrame(session.entities),
-    history: recentHistory(session.journal, 12),
-    action,
-  });
-}
-
-/**
- * Build context messages for the DM routing call (which NPC to address).
- * Lists present NPCs and asks for JSON {targets, note?}.
- *
- * @param {object} params
- * @param {Array} params.presentNpcs     — from sense.presentAgents()
- * @param {object} params.session        — Session instance
- * @param {string} params.action         — player action text
- * @returns {Array<{role:string, content:string}>}
- */
-export function buildDmRoutingContext({ presentNpcs, session, action }) {
-  const npcList = presentNpcs.map(n => {
-    const pers = n.persona ? ` — ${n.persona}` : '';
-    return `- ${n.name} (id: "${n.npcId}")${pers}`;
-  }).join('\n');
-
-  const systemPrompt =
-    `You are the DM director. Your job is to route player input to the correct NPC.\n` +
-    `Do NOT narrate or speak. Output ONLY a JSON object.\n\n` +
-    `NPCs present in the scene:\n${npcList || '(none)'}`;
-
-  const messages = [
-    { role: 'system', content: systemPrompt },
-    { role: 'user', content: `Player action: "${action}"\n\nWhich NPC(s) should respond? Output: {"targets":["<npcId>"], "note":"<optional director note for the NPC>"}\n\nIf the player is addressing no specific NPC (ambient observation / world action), return {"targets":[], "note":""}.` },
-  ];
-
-  return messages;
-}
-
-
