@@ -53,13 +53,30 @@ the reason they left the deep woods is worse than they are.
   needs your approve/reject/regenerate), stage-a-beat authoring (spawn actors,
   request checks, put words in an NPC's mouth, begin combat), turn-order
   override for both combat models, agent-activity traces, god-mode inspector.
-- **Scene art** — locations carry an `art.prompt`; the engine renders it once
-  (free, keyless) and caches it. `ART_PROVIDER=mock` for offline SVG moods.
-- **Rules-as-data** — 5e (d20-vs-DC), DSA (3d20 roll-under), and Necrotopia
-  (d6-over-Armor) run on the same core. A ruleset is one pure-data file. See
-  [docs/RULESET-AUTHORING.md](docs/RULESET-AUTHORING.md).
-- **Worldgen** — generate a new campaign as data: procgen skeleton + an LLM pass
-  that charges it with meaning, written in the exact shape the engine seeds from.
+- **The walkable world** — every location renders as a tile map you point-click
+  through (Diablo-style): exits travel, clicking an NPC talks, clicking an enemy
+  walks up and starts the turn-based fight. Tiles are semantic tags skinned by
+  swappable tilesets — the default is AI-painted and cached; a flat offline skin
+  ships too. Press 🗺 for the world map (visited-locations graph with fog).
+- **The breathing world** — a 4-phase day ticks with your actions: NPCs walk
+  their scheduled rounds ("Bodo heads for the inn"), locations surface authored
+  ambient lines, and the DM narrates by the clock. Deterministic — no LLM
+  required for the world to feel inhabited.
+- **Memory** — the journal writes itself into the people it happened to:
+  clock-stamped lifelogs for PCs and NPCs, folded into ≤80-word living
+  summaries by the LLM (never silently evicted). The DM sees every party
+  member's story-so-far; NPCs remember what they told you. `GET /sense/recall?q=`.
+- **Atmosphere** — procedural mood music (Web Audio, zero assets, 🔊 toggle)
+  that follows map style × time of day, flips for combat, and obeys the
+  DMView mood knob. Scene paintings + NPC portraits from `art.prompt`s, all
+  anchored by a per-world style string. `ART_PROVIDER=mock` for offline play.
+- **Rules-as-data** — 5e (d20-vs-DC), DSA (3d20 roll-under + Attacke/Parade),
+  and Necrotopia (d6-over-Armor) run on the same core. A ruleset is one
+  pure-data file. See [docs/RULESET-AUTHORING.md](docs/RULESET-AUTHORING.md).
+- **Worldgen** — generate a region-structured campaign as data (up to 36
+  locations: settlements, wilds, dungeon chains, a boss lair, side quests):
+  procgen skeleton + an LLM pass that charges it with meaning, written in the
+  exact shape the engine seeds from. `campaigns/lanternfall/` was made this way.
 
 ## Configuration
 

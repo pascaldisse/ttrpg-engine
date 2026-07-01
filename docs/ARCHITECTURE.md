@@ -124,6 +124,34 @@ Output is a scene JSON in the exact shape the Session seeds from: **generated
 once → fixed data**. The LLM never re-invents geometry at runtime; it reads the
 world. `campaigns/lanternfall/` is a shipped 24-location example.
 
+## The walkable world (`shared/tilegen.js` + `client/kernel/worldview.js`)
+
+Every location carries a `tiles` component: a grid of SEMANTIC TAGS
+(floor/wall/water/tree/road/…), exits wired 1:1 to `place.connections`, and
+spawn points. Worlds without authored grids get deterministic ones at boot
+(same location id ⇒ same map, part of the world fingerprint). The client
+renders the grid through a **tileset skin** (`tileset.js`: tag → texture;
+default streams AI-painted tiles from `GET /art/tile/<tag>`, offline skin is
+procedural) and runs a point-click avatar: exits fire real `move` ops, NPC
+clicks prefill talk, enemy clicks walk adjacent and `attack` — the classic
+JRPG handoff into the unchanged turn-based combat engine. The `onStep` seam is
+where random encounters hang later. Presentation only: no gameplay lives here.
+
+## The breathing world (`shared/clock.js`) + memory (`server/memory.js`)
+
+Every world action ticks a 4-phase day on `world-state.clock` (frozen
+mid-encounter). Phase changes banner the time, walk `schedule`-component NPCs
+on their rounds, and surface `flags.ambient` lines where the party stands —
+deterministic; the DM stages richer beats on top. The DM reads `Time: Day N,
+phase` in every scene frame.
+
+The memory engine listens to the journal and writes durable canon into
+`lifelog` components: PCs remember quest steps and battle outcomes, NPCs
+remember their own words, all clock-stamped. Past a threshold an LLM folds old
+entries into an ≤80-word living summary (fold-down, never silent eviction).
+Lifelogs reach the prompts (DM scene frame + NPC context) and power
+`GET /sense/recall?q=` keyword recall.
+
 ## Persistence
 
 `server/session.js`: debounced save per slot (`TTRPG_SAVE`), flushed on
