@@ -107,3 +107,69 @@ function titleCase(s) {
 function clone(v) {
   return JSON.parse(JSON.stringify(v));
 }
+
+// ---- Multiplayer: PC claim / spawn ----
+
+/**
+ * Bind a connecting player (`who`) to a PC — the heart of multiplayer.
+ *
+ * Resolution order:
+ *  1. A PC already bound to this player (agent.controller === who) → reconnect.
+ *  2. An UNBOUND PC (no agent.controller) → claim it (first player gets the
+ *     authored protagonist).
+ *  3. Spawn a fresh PC: from the ruleset's `actorTemplates.player` if it ships
+ *     one, else a CLONE of the first PC's chassis (same stats shape, full hp,
+ *     same Moves, same location) named after the player. The template PC
+ *     already embodies the ruleset — no engine-side stat invention.
+ *
+ * @param {string} who — player name from the hello presence
+ * @param {Map<string,object>} entities
+ * @param {object|null} templates — ruleset actorTemplates (may ship `player`)
+ * @returns {{pcId:string, ops:object[]}|null} — ops to apply (claim merge or spawn), or null (no PCs at all and no template)
+ */
+export function bindPlayerPc(who, entities, templates) {
+  if (!who) return null;
+  const whoLower = String(who).toLowerCase();
+  const pcs = [...entities.entries()].filter(([_id, c]) => (c.identity || {}).kind === 'pc');
+
+  // 1. Reconnect: this player already owns a PC.
+  const mine = pcs.find(([_id, c]) => ((c.agent || {}).controller || '').toLowerCase() === whoLower);
+  if (mine) return { pcId: mine[0], ops: [] };
+
+  // 2. Claim the first unbound PC.
+  const unbound = pcs.find(([_id, c]) => !(c.agent || {}).controller);
+  if (unbound) {
+    return {
+      pcId: unbound[0],
+      ops: [{ op: 'merge', id: unbound[0], component: 'agent', value: { enabled: false, controller: who } }],
+    };
+  }
+
+  // 3. Spawn a new party member.
+  const tmap = templates || {};
+  const first = pcs[0] || null;
+  const chassis = tmap.player ? clone(tmap.player) : (first ? clone(first[1]) : null);
+  if (!chassis) return null;
+
+  const slug = slugify(who);
+  let id = `pc-${slug}`;
+  for (let n = 2; entities.has(id); n++) id = `pc-${slug}-${n}`;
+
+  const stats = clone(chassis.stats || { hp: 10, maxHp: 10 });
+  if (stats.maxHp != null) stats.hp = stats.maxHp;   // fresh character, full health
+  if (stats.xp != null) stats.xp = 0;
+  if (stats.level != null) stats.level = 1;
+
+  const components = {
+    identity: { name: who, kind: 'pc', description: 'A fellow traveler.' },
+    stats,
+    status: { alive: true, conditions: [] },
+    place: { locationId: first ? ((first[1].place || {}).locationId || null) : null, connections: [] },
+    moves: clone(chassis.moves || { list: [] }),
+    inventory: { items: [] },
+    agent: { enabled: false, controller: who },
+  };
+  if (chassis.flags) components.flags = clone(chassis.flags);
+
+  return { pcId: id, ops: [{ op: 'spawn', id, components }] };
+}

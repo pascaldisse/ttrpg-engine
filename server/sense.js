@@ -18,12 +18,12 @@ import { pcLocationId } from '../shared/space.js';
  * @param {import('./session.js').Session} session
  * @returns {string}
  */
-export function look(session) {
+export function look(session, pcId) {
   const { entities } = session;
   if (!entities || entities.size === 0) {
     return 'Current scene: (empty — no entities loaded).';
   }
-  return buildLookFrame(entities);
+  return buildLookFrame(entities, pcId);
 }
 
 /**
@@ -128,10 +128,11 @@ export function check(session) {
  * If the PC has no location, falls back to all agent-NPCs (degenerate single-room).
  *
  * @param {import('./session.js').Session} session
+ * @param {string} [pcId] — scope to this PC's location (default: first PC)
  * @returns {Array<{npcId:string, name:string, persona:string, accent:string|null, locationId:string|null}>}
  */
-export function presentAgents(session) {
-  const here = pcLocationId(session.entities);
+export function presentAgents(session, pcId) {
+  const here = pcLocationId(session.entities, pcId);
   const agents = [];
   for (const [id, comps] of session.entities) {
     const identity = comps.identity || {};

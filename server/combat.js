@@ -23,7 +23,7 @@ import {
 import { expandOp } from '../shared/effects.js';
 import { tickStatuses } from '../shared/statuses.js';
 import { resolveCheck, formatCheckResult } from '../shared/checks.js';
-import { findPc, pcLocationId, entitiesAt } from '../shared/space.js';
+import { findPc, findPcs, findPcFor, pcLocationId, entitiesAt } from '../shared/space.js';
 
 const ATTACK_RE = /\b(attack|attacks?|hit|strike|stab|slash|swing|fight|kill|charge|shoot|punch|lunge|cut down|draw (?:my )?(?:sword|blade|steel|weapon))\b/i;
 const FLEE_RE = /\b(flee|run away|run|escape|retreat|disengage|get away|leg it|withdraw)\b/i;
@@ -48,6 +48,15 @@ export function createCombatEngine({ session, broadcast, applyAndBroadcast, awar
   // ---- small helpers ----
 
   const pcId = () => { const pc = findPc(session.entities); return pc ? pc[0] : null; };
+  /** The acting PC for an action op (multiplayer: resolved from op.by). */
+  const actingPcId = (actionOp) => {
+    const pc = findPcFor(session.entities, actionOp && actionOp.by);
+    return pc ? pc[0] : null;
+  };
+  /** Every living PC at a location — the party side of an encounter. */
+  const partyAt = (here) => findPcs(session.entities)
+    .filter(([id, c]) => ((c.place || {}).locationId || null) === here && (c.status || {}).alive !== false)
+    .map(([id]) => id);
 
   const getEncounter = () => {
     const comps = session.entities.get(ENCOUNTER_ID);
@@ -205,7 +214,7 @@ export function createCombatEngine({ session, broadcast, applyAndBroadcast, awar
   /** Who drives this combatant seat: 'ai', or a human owner name. The PC is 'player'. */
   function controllerOf(id) {
     const c = session.entities.get(id) || {};
-    if ((c.identity || {}).kind === 'pc') return 'player';
+    if ((c.identity || {}).kind === 'pc') return (c.agent && c.agent.controller) || 'player';
     if (c.agent && c.agent.controller) return c.agent.controller;
     if (c.presence && c.presence.controller) return c.presence.controller;
     return 'ai';
@@ -495,7 +504,7 @@ export function createCombatEngine({ session, broadcast, applyAndBroadcast, awar
     const livingEnemies = (enc.enemies || []).filter(isAlive);
     const ruling = await dmAgent.adjudicateCombat(actionOp, livingEnemies);
 
-    const pc = pcId();
+    const pc = curActor(getEncounter()) || actingPcId(actionOp) || pcId();
     const pcStats = (session.entities.get(pc) || {}).stats || {};
     const proficiency = pcStats.proficiency || 2;
 
@@ -670,15 +679,17 @@ export function createCombatEngine({ session, broadcast, applyAndBroadcast, awar
     const reqTarget = (typeof actionOp === 'object' && actionOp.target) || null;
     const enemies = presentHostiles();
     if (enemies.length === 0) return null;
-    const pc = pcId();
+    const pc = actingPcId(typeof actionOp === 'object' ? actionOp : null) || pcId();
     if (!pc) return null;
 
     const targetIsHostile = reqTarget && enemies.includes(reqTarget);
     if (!ATTACK_RE.test(actionText) && !targetIsHostile) return null;
 
     const targetId = targetIsHostile ? reqTarget : (pickTarget(actionText, enemies) || enemies[0]);
-    // C5: friendly combatants (AI or human-seated) join the party side of the timeline.
-    const allies = [pc, ...presentAllies()];
+    // C5/multiplayer: every party PC here + friendly combatants join the party side.
+    const here = ((session.entities.get(pc) || {}).place || {}).locationId || null;
+    const pcs = partyAt(here);
+    const allies = [...(pcs.length ? pcs : [pc]), ...presentAllies()];
     return { targetId, enemies, allies };
   }
 
@@ -736,8 +747,9 @@ export function createCombatEngine({ session, broadcast, applyAndBroadcast, awar
       applyAndBroadcast([{ op: 'event', name: 'system', data: { kind: 'note', text: `(It is ${nameOf(actor)}'s turn.)` } }], 'system');
       return;
     }
-    // The PC seat accepts any human (single PC); a named ally seat requires its owner.
-    if (actorKind !== 'pc' && actionOp.by && actionOp.by !== ctrl) {
+    // Seat ownership: an UNBOUND pc (ctrl 'player') accepts any human (single-player);
+    // a bound pc or named ally seat only accepts its own player.
+    if (ctrl !== 'player' && actionOp.by && actionOp.by !== ctrl) {
       applyAndBroadcast([{ op: 'event', name: 'system', data: { kind: 'note', text: `(It is ${nameOf(actor)}'s turn — wait for yours.)` } }], 'system');
       return;
     }
@@ -815,9 +827,11 @@ export function createCombatEngine({ session, broadcast, applyAndBroadcast, awar
     if (inCombat()) return false;
     const enemies = presentHostiles();
     if (enemies.length === 0) return false;
-    const pc = pcId();
+    const pc = actingPcId(actionOp) || pcId();
     if (!pc) return false;
-    const allies = [pc, ...presentAllies()];
+    const here = ((session.entities.get(pc) || {}).place || {}).locationId || null;
+    const pcs = partyAt(here);
+    const allies = [...(pcs.length ? pcs : [pc]), ...presentAllies()];
     await startAndResolve(actionOp, { targetId: enemies[0], enemies, allies });
     return true;
   }

@@ -14,7 +14,7 @@
  * and combat kills — enough to tie phases P4-P5 together.
  */
 
-import { findPc, pcLocationId } from './space.js';
+import { findPcs, pcLocationId } from './space.js';
 
 // ---- Helpers ----------------------------------------------------------------
 
@@ -84,15 +84,16 @@ export function triggerMet(trigger, entities) {
     }
 
     case 'atLocation': {
-      const loc = pcLocationId(entities);
-      return loc === trigger.id;
+      // Party-aware: ANY living PC standing there satisfies the trigger.
+      return findPcs(entities).some(([_id, c]) =>
+        (c.status || {}).alive !== false &&
+        ((c.place || {}).locationId || null) === trigger.id);
     }
 
     case 'hasItem': {
-      const pc = findPc(entities);
-      if (!pc) return false;
-      const items = (pc[1].inventory && pc[1].inventory.items) || [];
-      return items.some(item => item.id === trigger.id);
+      // Party-aware: ANY PC carrying it satisfies the trigger.
+      return findPcs(entities).some(([_id, c]) =>
+        ((c.inventory && c.inventory.items) || []).some(item => item.id === trigger.id));
     }
 
     case 'dead': {

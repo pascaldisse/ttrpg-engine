@@ -14,6 +14,7 @@ import { Session } from './session.js';
 import { SCHEMA } from '../shared/schema.js';
 import { validateOpBatch } from '../shared/ops.js';
 import { redactForSeat, seatSees } from '../shared/visibility.js';
+import { bindPlayerPc } from '../shared/staging.js';
 import { createLlmClient } from './llm.js';
 import { createTurnEngine } from './turn.js';
 import { createCombatEngine } from './combat.js';
@@ -287,6 +288,20 @@ wss.on('connection', (ws) => {
     if (msg.type === 'hello') {
       const pres = msg.presence || { seat: 'player', who: 'anonymous', mode: 'play' };
       ws._seat = pres.seat || 'player';
+
+      // Multiplayer: a player seat binds to a PC — reclaim its own, claim the
+      // first unbound one, or spawn a fresh party member from the PC chassis.
+      if (ws._seat === 'player' && pres.who) {
+        const bind = bindPlayerPc(pres.who, session.entities, rulesetActorTemplates);
+        if (bind) {
+          if (bind.ops.length) applyAndBroadcast(bind.ops, 'system');
+          pres.pcId = bind.pcId;
+          ws._pcId = bind.pcId;
+          const pcName = ((session.entities.get(bind.pcId) || {}).identity || {}).name || bind.pcId;
+          console.log(`[ws] Player "${pres.who}" drives ${bind.pcId} (${pcName})`);
+        }
+      }
+
       const presenceId = msg.presenceId || `presence-${Date.now()}`;
       applyAndBroadcast([{ op: 'spawn', id: presenceId, components: { presence: pres } }], 'system');
       ws._presenceId = presenceId; // remembered for cleanup on disconnect

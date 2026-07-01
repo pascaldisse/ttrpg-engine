@@ -7,29 +7,30 @@
  * will be extended from ruleset data (ruleset/system-prompt.txt + schema).
  */
 
-import { findPc, pcLocationId, entitiesAt, exitsFrom } from './space.js';
+import { findPc, findPcs, pcLocationId, entitiesAt, exitsFrom } from './space.js';
 
 
 /**
  * Build a compact text "scene frame" from the entity store — LOCATION-SCOPED.
  *
  * This is the single, canonical scene-frame generator (server/sense.js `look()`
- * delegates here). It shows ONLY what is present at the PC's current location:
- * the location itself + its exits, the NPCs and ground items HERE, the party,
- * plus globally-relevant active quests and world flags. "Only what's HERE is
- * present" — the whole world is never dumped into context at once.
+ * delegates here). It shows ONLY what is present at the acting PC's current
+ * location: the location itself + its exits, the NPCs and ground items HERE,
+ * the party members HERE, plus globally-relevant active quests and world flags.
+ * "Only what's HERE is present" — the whole world is never dumped into context.
  *
  * @param {Map<string,object>|Record<string,object>} entities
+ * @param {string} [pcId] — the acting PC to scope around (default: first PC)
  * @returns {string}
  */
-export function buildLookFrame(entities) {
+export function buildLookFrame(entities, pcId) {
   const map = entities instanceof Map ? entities : new Map(Object.entries(entities));
   if (map.size === 0) {
     return 'Current scene: (empty — no entities loaded).';
   }
 
-  const pc = findPc(map);
-  const locId = pcLocationId(map);
+  const pc = pcId && map.get(pcId) ? [pcId, map.get(pcId)] : findPc(map);
+  const locId = pcLocationId(map, pc ? pc[0] : undefined);
   const locComps = locId ? map.get(locId) : null;
   const parts = ['Current scene frame:'];
 
@@ -74,21 +75,25 @@ export function buildLookFrame(entities) {
     }
   }
 
-  // ---- Party (the PC) ----
-  if (pc) {
-    const [pcId, comps] = pc;
-    const idn = comps.identity || {};
-    const stats = comps.stats || {};
-    const hpStr = stats.hp !== undefined ? ` HP:${stats.hp}/${stats.maxHp}` : '';
-    const status = comps.status || {};
-    const conds = (status.conditions || []).length > 0
-      ? ` Conditions: ${status.conditions.join(', ')}.` : '';
-    const inv = (comps.inventory || {}).items || [];
-    const carried = inv.length > 0
-      ? ` Carrying: ${inv.map(i => (typeof i === 'string' ? i : (i.name || i.id))).join(', ')}.`
-      : ' Carrying: nothing of note.';
+  // ---- Party (every PC at this location; the acting PC marked) ----
+  const party = findPcs(map).filter(([id, c]) =>
+    !locId || ((c.place || {}).locationId || null) === locId);
+  if (party.length > 0) {
     parts.push('\nParty:');
-    parts.push(`- **${idn.name || pcId}** (${pcId})${hpStr}${conds}${carried}`);
+    for (const [id, comps] of party) {
+      const idn = comps.identity || {};
+      const stats = comps.stats || {};
+      const hpStr = stats.hp !== undefined ? ` HP:${stats.hp}/${stats.maxHp}` : '';
+      const status = comps.status || {};
+      const conds = (status.conditions || []).length > 0
+        ? ` Conditions: ${status.conditions.join(', ')}.` : '';
+      const inv = (comps.inventory || {}).items || [];
+      const carried = inv.length > 0
+        ? ` Carrying: ${inv.map(i => (typeof i === 'string' ? i : (i.name || i.id))).join(', ')}.`
+        : ' Carrying: nothing of note.';
+      const acting = pc && id === pc[0] ? ' ← ACTING' : '';
+      parts.push(`- **${idn.name || id}** (${id})${hpStr}${conds}${carried}${acting}`);
+    }
   }
 
   // ---- Active quests (global) ----
@@ -137,7 +142,9 @@ export function recentHistory(journalEntries, n = 12) {
     const entry = journalEntries[i];
 
     if (entry.op === 'action' && entry.text) {
-      relevant.unshift({ role: 'user', content: entry.text });
+      // Multiplayer: attribute the action so the DM knows WHO did it.
+      const by = entry.by && entry.by !== 'player' ? `[${entry.by}] ` : '';
+      relevant.unshift({ role: 'user', content: `${by}${entry.text}` });
     } else if (entry.op === 'event' && entry.name === 'narration') {
       const data = entry.data || {};
       if (data.done && data.text) {

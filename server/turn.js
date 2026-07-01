@@ -18,7 +18,7 @@ import { presentAgents as sensePresentAgents, look as senseLook } from './sense.
 import { resolveCheck, formatCheckResult } from '../shared/checks.js';
 import { expandOp } from '../shared/effects.js';
 import { validateOp } from '../shared/ops.js';
-import { resolveExit, isConnected, pcLocationId } from '../shared/space.js';
+import { resolveExit, isConnected, pcLocationId, findPcFor, locationOf } from '../shared/space.js';
 import { resolveActorSpawn } from '../shared/staging.js';
 
 /**
@@ -29,6 +29,12 @@ import { resolveActorSpawn } from '../shared/staging.js';
  * present but no exit matches, we fall through to LLM adjudication (move backstop).
  */
 export const MOVE_INTENT_RE = /^\s*(?:(?:i(?:'d| would)?\s+(?:like|want|wish|love|need)\s+to|i\s+(?:wanna|want to)|let'?s|let us|can we|could we|shall we|time to|off)\s+)?(?:go|move|walk|head|travel|journey|venture|proceed|return|leave|exit|enter|run|step|climb|descend|cross|wander|stroll|visit|approach|make (?:my|our) way|set off|set out)\b/i;
+
+/** "[Kid] hello" — name the speaking party member so NPCs address the right one. */
+function speakerPrefix(pcEntry, text) {
+  const name = pcEntry && pcEntry[1] && pcEntry[1].identity && pcEntry[1].identity.name;
+  return name ? `[${name}] ${text}` : text;
+}
 
 /**
  * Create the turn engine.
@@ -84,20 +90,17 @@ export function createTurnEngine({ session, broadcast, applyAndBroadcast, dmAgen
     if (!actionText) return;
 
     try {
-      // 0. Turn-local scene frame (computed once; passed to the agents explicitly)
-      const lookText = senseLook(session);
-
-      // 1. Get present agent-NPCs (already scoped to the PC's location)
-      const presentNpcs = sensePresentAgents(session);
-
-      // 0.1 Find PC entity for stat context (needed for check resolution + movement)
-      const pcEntry = [...session.entities.entries()].find(
-        ([_id, comps]) => (comps.identity || {}).kind === 'pc'
-      );
+      // 0. Resolve the ACTING PC from the action's sender (multiplayer: each player
+      //    drives their own PC; single-player falls back to the first PC).
+      const pcEntry = findPcFor(session.entities, actionOp.by);
       const pcId = pcEntry ? pcEntry[0] : null;
       const pcStats = (pcEntry && pcEntry[1].stats) || {};
+
+      // 0.1 Turn-local scene frame + present agent-NPCs, scoped to the acting PC
+      const lookText = senseLook(session, pcId);
+      const presentNpcs = sensePresentAgents(session, pcId);
       const pcProficiency = pcStats.proficiency || 2;
-      const here = pcLocationId(session.entities);
+      const here = pcId ? locationOf(session.entities, pcId) : pcLocationId(session.entities);
 
       // 2. @name fast-path (no LLM) → route to matched NPC directly
       const atMatch = actionText.match(/@(\S+)/);
@@ -107,7 +110,7 @@ export function createTurnEngine({ session, broadcast, applyAndBroadcast, dmAgen
           const npcName = (npc.name || '').toLowerCase();
           if (npcName.startsWith(token) || npcName === token) {
             const cleanText = actionText.replace(/@\S+\s*/, '').trim() || 'Hello.';
-            await npcAgent.respond(npc.npcId, cleanText, '');
+            await npcAgent.respond(npc.npcId, speakerPrefix(pcEntry, cleanText), '', pcId);
             return;
           }
         }
@@ -211,14 +214,12 @@ export function createTurnEngine({ session, broadcast, applyAndBroadcast, dmAgen
   async function executeRuling(actionOp, ruling) {
     const actionText = (actionOp.text || '').trim();
 
-    const pcEntry = [...session.entities.entries()].find(
-      ([_id, comps]) => (comps.identity || {}).kind === 'pc'
-    );
+    const pcEntry = findPcFor(session.entities, actionOp.by);
     const pcId = pcEntry ? pcEntry[0] : null;
     const pcStats = (pcEntry && pcEntry[1].stats) || {};
     const pcProficiency = pcStats.proficiency || 2;
-    const here = pcLocationId(session.entities);
-    let lookText = senseLook(session);
+    const here = pcId ? locationOf(session.entities, pcId) : pcLocationId(session.entities);
+    let lookText = senseLook(session, pcId);
 
     // 3.5 Movement decided by the LLM (natural-language backstop).
     if (pcId && ruling.move && ruling.move.to) {
@@ -237,7 +238,7 @@ export function createTurnEngine({ session, broadcast, applyAndBroadcast, dmAgen
     // 4. speakTo path → NPC conversation
     if (ruling.speakTo) {
       emitTrace({ agent: 'npc', phase: 'respond', summary: `${ruling.speakTo} responds to the player`, detail: { note: ruling.note || '' } });
-      await npcAgent.respond(ruling.speakTo, actionText, ruling.note || '');
+      await npcAgent.respond(ruling.speakTo, speakerPrefix(pcEntry, actionText), ruling.note || '', pcId);
       return;
     }
 
@@ -245,7 +246,7 @@ export function createTurnEngine({ session, broadcast, applyAndBroadcast, dmAgen
     // spawned into the world NOW, before the prose describes it. Applied one at a
     // time so ids stay unique; the scene frame is refreshed so RENDER sees them.
     const spawnedIds = stageSpawns(ruling.spawns, here);
-    if (spawnedIds.length) lookText = senseLook(session);
+    if (spawnedIds.length) lookText = senseLook(session, pcId);
 
     // 5. World action: resolve checks via ENGINE
     const checkResults = [];
@@ -330,7 +331,7 @@ export function createTurnEngine({ session, broadcast, applyAndBroadcast, dmAgen
         .map(a => ({ archetype: a.archetype ? String(a.archetype) : undefined, name: String(a.name), hostile: a.hostile === true || undefined }));
       if (specs.length) {
         emitTrace({ agent: 'dm', phase: 'grounding', summary: `backstop: spawning ${specs.length} ungrounded actor(s) the prose named`, detail: specs });
-        stageSpawns(specs, pcLocationId(session.entities));
+        stageSpawns(specs, pcId ? locationOf(session.entities, pcId) : pcLocationId(session.entities));
       }
     }
   }

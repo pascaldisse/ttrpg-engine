@@ -13,8 +13,10 @@
 /** Components hidden entirely from non-DM seats. */
 export const PRIVATE_COMPONENTS = ['persona', 'knowledge', 'lifelog'];
 
-/** For non-DM seats, the `agent` component is reduced to just these fields. */
-export const AGENT_PUBLIC_FIELDS = ['enabled', 'accent'];
+/** For non-DM seats, the `agent` component is reduced to just these fields.
+ *  `controller` is public: it is a player's name (seat ownership drives the
+ *  multiplayer HUD), never AI internals. */
+export const AGENT_PUBLIC_FIELDS = ['enabled', 'accent', 'controller'];
 
 // ---- Seat-to-audience gating ----
 

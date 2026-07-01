@@ -43,7 +43,7 @@ export function createNpcAgent({ session, broadcast, applyAndBroadcast, llm }) {
    * @param {string} [directorNote] — optional DM stage direction injected into context
    * @returns {Promise<string>} — the NPC's response text
    */
-  async function respond(npcId, playerText, directorNote) {
+  async function respond(npcId, playerText, directorNote, pcId) {
     // Gather NPC components
     const comps = session.entities.get(npcId);
     if (!comps) {
@@ -75,8 +75,8 @@ export function createNpcAgent({ session, broadcast, applyAndBroadcast, llm }) {
       systemPrompt: agent.systemPrompt || null,
     };
 
-    // Build NPC context
-    const lookText = senseLook(session);
+    // Build NPC context, scoped to the acting PC's location
+    const lookText = senseLook(session, pcId);
     const memory = npcMemoryFor(session.journal, npcId, 12);
 
     const messages = buildNpcContext({

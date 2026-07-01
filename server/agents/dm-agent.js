@@ -9,6 +9,7 @@
 import { z } from 'zod';
 import { streamBeat } from './stream-beat.js';
 import { look as senseLook } from '../sense.js';
+import { findPcFor } from '../../shared/space.js';
 
 // ---- 5e system prompt for the DM (narration voice) ----
 
@@ -186,10 +187,8 @@ export function createDmAgent({ session, broadcast, applyAndBroadcast, llm, rule
       return `- ${n.name} (id: "${n.npcId}")${pers}`;
     }).join('\n');
 
-    // Find PC entity for stats context
-    const pcEntry = [...session.entities.entries()].find(
-      ([_id, comps]) => (comps.identity || {}).kind === 'pc'
-    );
+    // The ACTING PC (multiplayer: resolved from the action's sender)
+    const pcEntry = findPcFor(session.entities, actionOp.by);
     const pcId = pcEntry ? pcEntry[0] : null;
     const pcStats = pcEntry && pcEntry[1].stats ? JSON.stringify(pcEntry[1].stats) : '{}';
     const pcName = (pcEntry && pcEntry[1].identity && pcEntry[1].identity.name) || 'the hero';
@@ -310,8 +309,8 @@ export function createDmAgent({ session, broadcast, applyAndBroadcast, llm, rule
     const messages = [
       { role: 'system', content: systemPrompt },
       ...history,
-      { role: 'system', content: (lookText || '(scene unknown)') + checkText + '\n\nNarrate the outcome of the player\'s action, incorporating the check results above. Do NOT roll dice or reference rules — the dice are already rolled. Describe what HAPPENS in the fiction.\n\nGROUNDING (critical): the scene above is the WHOLE cast. You may ONLY name NPCs, creatures, and objects that are listed there — any threat the moment needed has ALREADY been spawned and appears in the scene. Do NOT introduce a new named character or creature that is not listed; describe the present ones. Ambient scenery (weather, distant noise, unnamed crowds) is fine.' },
-      { role: 'user', content: actionText },
+      { role: 'system', content: (lookText || '(scene unknown)') + checkText + '\n\nNarrate the outcome of the player\'s action, incorporating the check results above. Do NOT roll dice or reference rules — the dice are already rolled. Describe what HAPPENS in the fiction.\n\nGROUNDING (critical): the scene above is the WHOLE cast. You may ONLY name NPCs, creatures, and objects that are listed there — any threat the moment needed has ALREADY been spawned and appears in the scene. Do NOT introduce a new named character or creature that is not listed; describe the present ones. Ambient scenery (weather, distant noise, unnamed crowds) is fine. A [Name] prefix on the action tells you WHICH party member acts — address them.' },
+      { role: 'user', content: (actionOp.by && actionOp.by !== 'player' ? `[${actionOp.by}] ` : '') + actionText },
     ];
 
     const streamId = `narr-${++streamCounter}`;
@@ -340,9 +339,7 @@ export function createDmAgent({ session, broadcast, applyAndBroadcast, llm, rule
    */
   async function canonize(actionOp, narrationText, checkResults) {
     const actionText = actionOp.text || '';
-    const pcEntry = [...session.entities.entries()].find(
-      ([_id, comps]) => (comps.identity || {}).kind === 'pc'
-    );
+    const pcEntry = findPcFor(session.entities, actionOp.by);
     const pcId = pcEntry ? pcEntry[0] : 'pc-hero';
 
     let checkText = '';
@@ -351,7 +348,7 @@ export function createDmAgent({ session, broadcast, applyAndBroadcast, llm, rule
     }
 
     // Ground canonize in the scoped scene so it can reference real item entity ids.
-    const lookText = senseLook(session);
+    const lookText = senseLook(session, pcEntry ? pcEntry[0] : undefined);
 
     const messages = [
       { role: 'system', content: CANONIZE_SYSTEM_PROMPT.replaceAll('<PC_ID>', pcId) },
@@ -387,7 +384,7 @@ export function createDmAgent({ session, broadcast, applyAndBroadcast, llm, rule
    */
   async function adjudicateCombat(actionOp, enemyIds) {
     const actionText = actionOp.text || '';
-    const pcEntry = [...session.entities.entries()].find(([_id, c]) => (c.identity || {}).kind === 'pc');
+    const pcEntry = findPcFor(session.entities, actionOp.by);
     const pcId = pcEntry ? pcEntry[0] : 'pc-hero';
 
     // C4 zone context: list the zones (+ tags) and where each combatant stands, so the

@@ -28,7 +28,7 @@ function get(entities, id) {
 }
 
 /**
- * Find the player character entity.
+ * Find the first player character entity (single-player fallback / party leader).
  * @returns {[string, object]|null} [id, comps] or null
  */
 export function findPc(entities) {
@@ -39,10 +39,58 @@ export function findPc(entities) {
 }
 
 /**
- * The location id the PC currently occupies (or null).
+ * All player character entities (the party).
+ * @returns {Array<[string, object]>}
+ */
+export function findPcs(entities) {
+  const out = [];
+  for (const [id, comps] of entries(entities)) {
+    if ((comps.identity || {}).kind === 'pc') out.push([id, comps]);
+  }
+  return out;
+}
+
+/**
+ * The PC a player drives, resolved from the action's `by` name.
+ * A PC is bound to its player via agent.controller (set at hello). Resolution:
+ * exact controller match → identity.name match → an unbound PC → first PC.
+ * @param {Map|object} entities
+ * @param {string} [by] — the acting player's name (actionOp.by / presence.who)
+ * @returns {[string, object]|null}
+ */
+export function findPcFor(entities, by) {
+  const pcs = findPcs(entities);
+  if (!pcs.length) return null;
+  if (by) {
+    const byLower = String(by).toLowerCase();
+    const bound = pcs.find(([_id, c]) => ((c.agent || {}).controller || '').toLowerCase() === byLower);
+    if (bound) return bound;
+    const named = pcs.find(([_id, c]) => (((c.identity || {}).name) || '').toLowerCase() === byLower);
+    if (named) return named;
+    const unbound = pcs.find(([_id, c]) => !(c.agent || {}).controller);
+    if (unbound) return unbound;
+  }
+  return pcs[0];
+}
+
+/**
+ * The location id an entity currently occupies (or null).
  * @returns {string|null}
  */
-export function pcLocationId(entities) {
+export function locationOf(entities, id) {
+  const comps = get(entities, id);
+  if (!comps) return null;
+  return (comps.place && comps.place.locationId) || null;
+}
+
+/**
+ * The location id a PC currently occupies (or null).
+ * @param {Map|object} entities
+ * @param {string} [pcId] — a specific PC; default: the first PC
+ * @returns {string|null}
+ */
+export function pcLocationId(entities, pcId) {
+  if (pcId) return locationOf(entities, pcId);
   const pc = findPc(entities);
   if (!pc) return null;
   return (pc[1].place && pc[1].place.locationId) || null;

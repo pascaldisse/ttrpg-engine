@@ -14,7 +14,7 @@
 import { pendingAdvances } from '../shared/quest-triggers.js';
 import { applyXp } from '../shared/progression.js';
 import { expandOp } from '../shared/effects.js';
-import { findPc } from '../shared/space.js';
+import { findPc, findPcs } from '../shared/space.js';
 
 const MAX_ADVANCE_GUARD = 30; // a quest can advance several steps in one evaluate
 
@@ -49,18 +49,22 @@ export function createQuestEngine({ session, broadcast, applyAndBroadcast }) {
    */
   function awardXp(amount, reason) {
     if (!amount || amount <= 0) return;
-    const pc = findPc(session.entities);
-    if (!pc) return;
-    const [pcId, comps] = pc;
-    const res = applyXp(comps.stats || {}, amount);
-    applyAndBroadcast([{ op: 'merge', id: pcId, component: 'stats', value: res.stats }], 'quest');
+    // Party XP: every living PC advances together (shared pool, no bookkeeping).
+    const pcs = findPcs(session.entities);
+    if (!pcs.length) return;
     questBanner('xp', `+${amount} XP${reason ? ` (${reason})` : ''}.`);
-    if (res.leveledUp) {
-      applyAndBroadcast([{
-        op: 'event', name: 'system',
-        data: { kind: 'levelup', text: `You reach level ${res.toLevel}!`, level: res.toLevel },
-      }], 'quest');
-      narrate(`Hard-won experience settles into your bones — you advance to level ${res.toLevel}.`);
+    for (const [pcId, comps] of pcs) {
+      if ((comps.status || {}).alive === false) continue;
+      const res = applyXp(comps.stats || {}, amount);
+      applyAndBroadcast([{ op: 'merge', id: pcId, component: 'stats', value: res.stats }], 'quest');
+      if (res.leveledUp) {
+        const name = ((comps.identity || {}).name) || pcId;
+        applyAndBroadcast([{
+          op: 'event', name: 'system',
+          data: { kind: 'levelup', text: `${name} reaches level ${res.toLevel}!`, level: res.toLevel, id: pcId },
+        }], 'quest');
+        narrate(`Hard-won experience settles in — ${name} advances to level ${res.toLevel}.`);
+      }
     }
   }
 
