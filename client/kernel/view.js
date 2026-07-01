@@ -1099,11 +1099,20 @@ export class View {
 
     const id = loc.identity || {};
     this.sceneAreaEl.className = 'col-span-8 bg-gray-900 rounded-lg border border-gray-700 p-5 min-h-[200px] overflow-y-auto flex flex-col';
-    this.sceneAreaEl.appendChild(
-      el('div', { className: 'flex-1 min-h-[120px] rounded bg-gray-800/40 border border-gray-800 flex items-center justify-center mb-4' }, [
-        el('span', { className: 'text-gray-700 text-xs' }, ['[ scene image ]']),
-      ]),
-    );
+    // Scene art from the server's art engine (GET /art/<locId>, cache-first;
+    // 404 = no art.prompt on this location → the frame simply hides itself).
+    if ((loc.art || {}).prompt) {
+      const port = typeof __TTRPG_PORT__ !== 'undefined' ? __TTRPG_PORT__ : '8420';
+      const frame = el('div', { className: 'rounded overflow-hidden border border-gray-800 mb-4 bg-gray-800/40' }, []);
+      const img = el('img', {
+        src: `http://${location.hostname}:${port}/art/${encodeURIComponent(locId)}`,
+        alt: id.name || 'scene',
+        className: 'w-full max-h-72 object-cover block',
+      });
+      img.onerror = () => frame.remove();
+      frame.appendChild(img);
+      this.sceneAreaEl.appendChild(frame);
+    }
     this.sceneAreaEl.appendChild(el('div', { className: 'text-amber-300/90 font-semibold text-lg mb-1' }, [id.name || 'Here']));
     if (id.description) {
       this.sceneAreaEl.appendChild(el('div', { className: 'text-gray-400 text-sm leading-relaxed' }, [id.description]));

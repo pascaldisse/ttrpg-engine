@@ -19,6 +19,7 @@ import { createLlmClient } from './llm.js';
 import { createTurnEngine } from './turn.js';
 import { createCombatEngine } from './combat.js';
 import { createQuestEngine } from './quests.js';
+import { createArtEngine } from './art.js';
 import { loadRuleset } from './ruleset.js';
 import { createDmAgent } from './agents/dm-agent.js';
 import { createNpcAgent } from './agents/npc-agent.js';
@@ -71,6 +72,10 @@ if (!session.entities.has('dm-control')) {
 // ---- LLM Client ----
 
 const llm = createLlmClient();
+
+// ---- Scene art (provider seam + disk cache; served at GET /art/<entityId>) ----
+
+const artEngine = createArtEngine({ worldDir: TTRPG_WORLD });
 
 // ---- Agents ----
 
@@ -225,6 +230,24 @@ const server = http.createServer(async (req, res) => {
         entities: session.entities.size,
         journal: session.journal.length,
       });
+    }
+
+    // GET /art/<entityId> — the entity's art.prompt rendered (cache-first).
+    if (req.method === 'GET' && url.pathname.startsWith('/art/')) {
+      const entityId = decodeURIComponent(url.pathname.slice('/art/'.length));
+      const art = await artEngine.artFor(entityId, session.entities);
+      if (!art) {
+        res.writeHead(404, { 'Access-Control-Allow-Origin': '*' });
+        res.end();
+        return;
+      }
+      res.writeHead(200, {
+        'Content-Type': art.mime,
+        'Cache-Control': 'public, max-age=86400',
+        'Access-Control-Allow-Origin': '*',
+      });
+      res.end(art.bytes);
+      return;
     }
 
     // GET /sense/look
