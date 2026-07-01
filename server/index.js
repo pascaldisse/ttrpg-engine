@@ -166,11 +166,31 @@ function applyAndBroadcast(ops, from) {
   if (!validation.ok) return { ok: false, error: validation.error, status: 400 };
   const result = session.applyOps(validation.ops, from);
   if (!result.ok) return { ...result, status: 409 };
-  if (result.resnapshot) broadcast(session.snapshot());
+  if (result.resnapshot) {
+    // A reset re-seeded the world: PC bindings were wiped, so rebind every
+    // connected player BEFORE the fresh snapshot goes out.
+    rebindConnectedPlayers();
+    broadcast(session.snapshot());
+  }
   if (result.broadcast && result.broadcast.length) {
     broadcast({ type: 'ops', ops: result.broadcast });
   }
   return result;
+}
+
+/** Re-run the player→PC binding for every connected player seat (after reset). */
+function rebindConnectedPlayers() {
+  for (const client of wss.clients) {
+    if (client.readyState !== 1 || client._seat !== 'player' || !client._who) continue;
+    const bind = bindPlayerPc(client._who, session.entities, rulesetActorTemplates);
+    if (!bind) continue;
+    if (bind.ops.length) session.applyOps(bind.ops, 'system');
+    client._pcId = bind.pcId;
+    if (client._presenceId && session.entities.has(client._presenceId)) {
+      session.applyOps([{ op: 'merge', id: client._presenceId, component: 'presence', value: { pcId: bind.pcId } }], 'system');
+    }
+    console.log(`[ws] Rebound "${client._who}" → ${bind.pcId} after reset`);
+  }
 }
 
 // ---- HTTP server ----
@@ -311,6 +331,7 @@ wss.on('connection', (ws) => {
     if (msg.type === 'hello') {
       const pres = msg.presence || { seat: 'player', who: 'anonymous', mode: 'play' };
       ws._seat = pres.seat || 'player';
+      ws._who = pres.who || 'anonymous';
 
       // Multiplayer: a player seat binds to a PC — reclaim its own, claim the
       // first unbound one, or spawn a fresh party member from the PC chassis.

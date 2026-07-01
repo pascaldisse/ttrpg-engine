@@ -26,7 +26,9 @@ export class View {
     this.entityListEl = document.getElementById('entity-list');
     this.transcriptEl = document.getElementById('transcript-entries');
     this.sceneAreaEl = document.getElementById('scene-area');
-    this.narrationEntriesEl = document.getElementById('narration-entries'); // legacy back-compat
+
+    // Set by main.js — this client's player name; picks which PC is "mine".
+    this.myName = null;
 
     // Track rendered entity elements for granular updates
     this._entityEls = new Map(); // id → DOM element
@@ -319,14 +321,18 @@ export class View {
       case 'dialogue':
         this._handleStreamingEvent(event.data, 'dialogue');
         break;
-      case 'system':
-        // P3: system events may be rolls (kind:'roll') or generic messages
-        if (event.data && event.data.kind === 'roll') {
-          this._handleRollEvent(event.data);
+      case 'system': {
+        const d = event.data || {};
+        // HUD-only noise never reaches the story: the combat HUD already renders
+        // the projected timeline queue and the overdrive meters.
+        if ((d.kind === 'combat' && d.phase === 'timeline') || d.kind === 'meter') break;
+        if (d.kind === 'roll') {
+          this._handleRollEvent(d);
         } else {
-          this._handleStreamingEvent(event.data, 'system');
+          this._handleStreamingEvent(d, 'system');
         }
         break;
+      }
       default:
         break;
     }
@@ -583,35 +589,16 @@ export class View {
   // ---- Helpers ----
 
   /**
-   * Get the transcript container element (create if missing).
+   * Get the transcript container element (create inside #narration-log if missing).
    */
   _getTranscriptContainer() {
     if (this.transcriptEl) return this.transcriptEl;
-
-    // Fall back to narration-entries div for back-compat
-    if (this.narrationEntriesEl) {
-      this.transcriptEl = this.narrationEntriesEl;
-      return this.narrationEntriesEl;
-    }
-
-    // Create a new transcript area
-    const narrationLogEl = document.getElementById('narration-log');
-    if (narrationLogEl) {
+    const log = document.getElementById('narration-log');
+    if (log) {
       this.transcriptEl = el('div', { id: 'transcript-entries', className: 'text-sm space-y-0' });
-      // Replace or append
-      const existing = narrationLogEl.querySelector('#transcript-entries');
-      if (existing) {
-        this.transcriptEl = existing;
-      } else {
-        // Remove the placeholder, add transcript
-        const placeholder = narrationLogEl.querySelector('.text-gray-600');
-        if (placeholder) placeholder.remove();
-        narrationLogEl.appendChild(this.transcriptEl);
-      }
+      log.appendChild(this.transcriptEl);
       return this.transcriptEl;
     }
-
-    // Ultimate fallback
     console.warn('[view] No transcript container found');
     return document.body;
   }
@@ -621,6 +608,47 @@ export class View {
     if (log) {
       log.scrollTop = log.scrollHeight;
     }
+  }
+
+  /**
+   * Replay journal history into the transcript (refresh keeps the story).
+   * Only ephemeral story ops are rendered — state ops are already in the snapshot.
+   * @param {Array<object>} entries — journal entries from GET /events
+   */
+  backfill(entries) {
+    if (!Array.isArray(entries) || !entries.length) return;
+    const container = this._getTranscriptContainer();
+    let rendered = 0;
+    for (const e of entries) {
+      if (e.op === 'action' && e.text) {
+        container.appendChild(this._renderTranscriptEntry('action', { by: e.by || 'You', text: e.text, done: true }, true));
+        rendered++;
+      } else if (e.op === 'event' && ['narration', 'dialogue', 'system'].includes(e.name)) {
+        const d = e.data || {};
+        if (!d.text) continue; // streaming deltas never reach the journal; only finals carry text
+        if ((d.kind === 'combat' && d.phase === 'timeline') || d.kind === 'meter') continue;
+        if (d.kind === 'roll') {
+          const detail = d.detail || {};
+          const success = detail.success !== undefined ? detail.success : null;
+          container.appendChild(el('div', { className: 'py-1 text-center' }, [
+            el('span', {
+              className: 'text-xs px-2 py-0.5 rounded ' + (success === true
+                ? 'text-green-400/70 bg-green-900/20' : success === false
+                ? 'text-red-400/70 bg-red-900/20' : 'text-gray-500 bg-gray-800/50 italic'),
+              textContent: d.text,
+            }),
+          ]));
+        } else {
+          container.appendChild(this._renderTranscriptEntry(e.name, { ...d, done: true }, true));
+        }
+        rendered++;
+      }
+    }
+    if (rendered) {
+      container.appendChild(el('div', { className: 'py-2 text-center text-[10px] uppercase tracking-widest text-gray-600' },
+        ['— session resumes —']));
+    }
+    this._scrollToBottom();
   }
 
   // ---- Combat HUD (P5) ----
@@ -645,7 +673,7 @@ export class View {
     const currentId = isTimeline ? enc.turnOf : order[turnIndex];
 
     clear(this.sceneAreaEl);
-    this.sceneAreaEl.className = 'col-span-8 bg-gray-900 rounded-lg border border-gray-700 p-3 min-h-[200px] overflow-y-auto';
+    this.sceneAreaEl.className = 'bg-gray-900 rounded-lg border border-gray-700 p-3 min-h-[200px] overflow-y-auto';
 
     // Round header
     this.sceneAreaEl.appendChild(
@@ -877,12 +905,27 @@ export class View {
   // only sees the room they're in — present NPCs, items on the ground, and exits
   // — never the whole world. NPCs/items/exits are clickable to act.
 
-  /** Find the [id, comps] of the player character, or null. */
-  _findPc() {
+  /** All [id, comps] player characters (the party). */
+  _findPcs() {
+    const out = [];
     for (const [id, comps] of this.store.entities) {
-      if ((comps.identity || {}).kind === 'pc') return [id, comps];
+      if ((comps.identity || {}).kind === 'pc') out.push([id, comps]);
     }
-    return null;
+    return out;
+  }
+
+  /** The PC THIS client drives: controller === my name, else an unbound PC, else the first. */
+  _findPc() {
+    const pcs = this._findPcs();
+    if (!pcs.length) return null;
+    if (this.myName) {
+      const my = this.myName.toLowerCase();
+      const mine = pcs.find(([_id, c]) => ((c.agent || {}).controller || '').toLowerCase() === my);
+      if (mine) return mine;
+      const unbound = pcs.find(([_id, c]) => !(c.agent || {}).controller);
+      if (unbound) return unbound;
+    }
+    return pcs[0];
   }
 
   /** Entities physically present at a location (carried items naturally excluded). */
@@ -936,17 +979,21 @@ export class View {
     const locId = (pc.place || {}).locationId || null;
     const loc = locId ? this.store.entities.get(locId) : null;
 
-    this._playerHudEl.appendChild(this._renderYouCard(pc));
+    // Every party member at a glance; my own sheet expanded.
+    for (const [id, comps] of this._findPcs()) {
+      this._playerHudEl.appendChild(this._renderYouCard(comps, id === pcId));
+    }
     this._playerHudEl.appendChild(this._renderHereCard(pcId, locId, loc));
     const quests = this._renderQuestsCard();
     if (quests) this._playerHudEl.appendChild(quests);
   }
 
-  /** "You" card: name, level/XP, HP bar, conditions, inventory chips. */
-  _renderYouCard(pc) {
+  /** Party-member card: name, level/XP, HP bar, conditions, inventory chips. */
+  _renderYouCard(pc, isMine = true) {
     const identity = pc.identity || {};
     const stats = pc.stats || {};
     const status = pc.status || {};
+    const controller = (pc.agent || {}).controller || null;
     const hp = stats.hp ?? '?';
     const maxHp = stats.maxHp ?? '?';
     const pct = (typeof hp === 'number' && maxHp > 0) ? Math.max(0, Math.min(100, (hp / maxHp) * 100)) : 100;
@@ -956,7 +1003,12 @@ export class View {
 
     return el('div', { className: 'p-3 bg-gray-800 rounded border border-gray-700' }, [
       el('div', { className: 'flex items-baseline justify-between mb-2' }, [
-        el('span', { className: 'font-semibold text-gray-100' }, [identity.name || 'You']),
+        el('span', { className: 'font-semibold text-gray-100' }, [
+          identity.name || 'You',
+          isMine
+            ? el('span', { className: 'ml-2 text-[10px] px-1.5 py-0.5 rounded bg-blue-900/60 text-blue-300 align-middle' }, ['YOU'])
+            : (controller ? el('span', { className: 'ml-2 text-[10px] text-gray-500 align-middle' }, [controller]) : ''),
+        ]),
         el('span', { className: 'text-xs text-yellow-400 font-bold' }, [
           `Lv ${stats.level || 1}`,
           el('span', { className: 'text-gray-500 font-normal ml-1' }, [`· XP ${stats.xp || 0}`]),
@@ -1092,13 +1144,13 @@ export class View {
 
     clear(this.sceneAreaEl);
     if (!loc) {
-      this.sceneAreaEl.className = 'col-span-8 bg-gray-900 rounded-lg border border-gray-700 flex items-center justify-center min-h-[200px]';
+      this.sceneAreaEl.className = 'bg-gray-900 rounded-lg border border-gray-700 flex items-center justify-center min-h-[200px]';
       this.sceneAreaEl.appendChild(el('span', { className: 'text-gray-600 text-sm' }, ['[ scene ]']));
       return;
     }
 
     const id = loc.identity || {};
-    this.sceneAreaEl.className = 'col-span-8 bg-gray-900 rounded-lg border border-gray-700 p-5 min-h-[200px] overflow-y-auto flex flex-col';
+    this.sceneAreaEl.className = 'bg-gray-900 rounded-lg border border-gray-700 p-5 min-h-[200px] overflow-y-auto flex flex-col';
     // Scene art from the server's art engine (GET /art/<locId>, cache-first;
     // 404 = no art.prompt on this location → the frame simply hides itself).
     if ((loc.art || {}).prompt) {

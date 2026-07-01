@@ -1,32 +1,52 @@
 /**
  * client/main.js — Bootstrap.
- * Creates the store, connects the network, wires the view.
- *
- * Based on GAIA's client/main.js bootstrap pattern.
+ * Creates the store, backfills the story from the journal, connects the
+ * network, wires the view + header controls (name, new game, connection dot).
  */
 
 import { SessionStore } from './kernel/store.js';
 import { NetClient } from './kernel/net.js';
 import { View } from './kernel/view.js';
 
-// Create the client-side store mirror
-const store = new SessionStore();
+const PORT = typeof __TTRPG_PORT__ !== 'undefined' ? __TTRPG_PORT__ : '8420';
+const HTTP = `http://${location.hostname}:${PORT}`;
 
-// Create the view (subscribes to store)
-const view = new View(store);
+// ---- Player identity (drives which PC is yours — multiplayer) ----
 
-// Create network client
-const who = localStorage.getItem('ttrpg_who') || ('player-' + Math.random().toString(36).slice(2, 6));
+const who = localStorage.getItem('ttrpg_who') || ('Adventurer-' + Math.random().toString(36).slice(2, 5));
 localStorage.setItem('ttrpg_who', who);
 
-const net = new NetClient(store, who);
-net.connect();
+const nameInput = document.getElementById('player-name');
+nameInput.value = who;
+nameInput.addEventListener('change', () => {
+  const next = nameInput.value.trim();
+  if (!next || next === who) return;
+  localStorage.setItem('ttrpg_who', next);
+  location.reload(); // rejoin as the new player — server rebinds the PC
+});
 
-// Let the scoped player HUD send actions (clickable NPCs / items / exits) and the
-// combat HUD send declared Moves (text + move + target).
+// ---- Store + view ----
+
+const store = new SessionStore();
+const view = new View(store);
+view.myName = who;
+
+// ---- Story backfill (refresh keeps the story), then connect ----
+
+const net = new NetClient(store, who);
 view.onAction = (text, move, target, zone) => net.sendAction(text, move, target, zone);
 
-// ---- Wire action input ----
+try {
+  const res = await fetch(`${HTTP}/events?since=0&limit=1000`);
+  const { events } = await res.json();
+  view.backfill(events || []);
+} catch (_) {
+  // Server not up yet or no history — the live stream still works.
+}
+
+net.connect();
+
+// ---- Action input ----
 
 const actionInput = document.getElementById('action-input');
 const actionSend = document.getElementById('action-send');
@@ -47,10 +67,21 @@ actionInput.addEventListener('keydown', (e) => {
   }
 });
 
-// ---- Connection indicator ----
+// ---- New game (reset to the campaign start) ----
 
-net.onConnected(() => {
-  console.log('[main] Ready! Connected as', who);
+document.getElementById('new-game').addEventListener('click', () => {
+  if (!confirm('Start a new game? The current world state will be reset to the campaign start.')) return;
+  net.sendOps([{ op: 'reset' }]);
 });
 
+// ---- Connection dot ----
+
+const connDot = document.getElementById('conn-dot');
+setInterval(() => {
+  const open = net.ws && net.ws.readyState === 1;
+  connDot.className = `w-2 h-2 rounded-full ${open ? 'bg-green-500' : 'bg-red-500'}`;
+  connDot.title = open ? `connected as ${who}` : 'disconnected — retrying…';
+}, 1000);
+
+net.onConnected(() => console.log('[main] Ready! Connected as', who));
 console.log('[main] Booted — waiting for connection…');
