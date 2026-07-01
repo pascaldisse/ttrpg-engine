@@ -72,6 +72,7 @@ export function createNpcAgent({ session, broadcast, applyAndBroadcast, llm }) {
       backstory: persona.backstory || '',
       voice: persona.voice || '',
       knowledge,
+      lifelog: comps.lifelog || {},
       systemPrompt: agent.systemPrompt || null,
     };
 

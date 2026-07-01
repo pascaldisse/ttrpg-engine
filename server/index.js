@@ -19,6 +19,7 @@ import { createLlmClient } from './llm.js';
 import { createTurnEngine } from './turn.js';
 import { createCombatEngine } from './combat.js';
 import { createQuestEngine } from './quests.js';
+import { createMemoryEngine, recall } from './memory.js';
 import { createArtEngine } from './art.js';
 import { loadRuleset } from './ruleset.js';
 import { createDmAgent } from './agents/dm-agent.js';
@@ -85,6 +86,10 @@ const npcAgent = createNpcAgent({ session, broadcast, applyAndBroadcast, llm });
 // ---- Quest + progression engine (deterministic, no LLM) ----
 
 const questEngine = createQuestEngine({ session, broadcast, applyAndBroadcast });
+
+// ---- Memory engine (P6): lifelogs + living summaries off the journal ----
+
+const memoryEngine = createMemoryEngine({ session, applyAndBroadcast, llm });
 
 // ---- Combat Engine (structured encounters; deterministic, no LLM) ----
 // Combat awards kill-XP through the quest engine's shared awardXp.
@@ -294,6 +299,12 @@ const server = http.createServer(async (req, res) => {
       return json(res, { ok: true, look: sense.look(session) });
     }
 
+    // GET /sense/recall?q=… — keyword recall over lifelogs + the journal (P6).
+    if (req.method === 'GET' && url.pathname === '/sense/recall') {
+      const q = url.searchParams.get('q') || '';
+      return json(res, { ok: true, query: q, hits: recall(session, q) });
+    }
+
     // GET /sense/describe?id=
     if (req.method === 'GET' && url.pathname === '/sense/describe') {
       const id = url.searchParams.get('id') || '';
@@ -403,6 +414,14 @@ wss.on('connection', (ws) => {
       }
       if (msg.action === 'setAutopilot') {
         turnEngine.setAutopilot(!!msg.value);
+        return;
+      }
+      // P5: the DM's mood knob — drives every client's music engine (and is
+      // readable by the LLM via world flags). value: calm|eerie|tense|combat|
+      // somber, or null/'' to hand mood control back to the world.
+      if (msg.action === 'setMood') {
+        const mood = ['calm', 'eerie', 'tense', 'combat', 'somber'].includes(msg.value) ? msg.value : null;
+        applyAndBroadcast([{ op: 'merge', id: 'world-state', component: 'flags', value: { mood } }], 'dm');
         return;
       }
       // D5: a human DM (DMView) stages the next beat — spawns/checks/beginCombat — that

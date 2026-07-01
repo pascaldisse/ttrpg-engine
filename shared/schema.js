@@ -139,10 +139,11 @@ export const SCHEMA = {
     },
   },
   lifelog: {
-    doc: 'Compact per-character memory summary — the living-summary primitive.',
-    default: { summary: '' },
+    doc: 'Per-character durable memory (P6). The memory engine appends clock-stamped entries off the journal; past the threshold an LLM folds old entries into the ≤80-word living summary. Canon that survives the context window.',
+    default: { summary: '', entries: [] },
     fields: {
-      summary: { doc: 'Prose summary of notable events for this character.' },
+      summary: { doc: 'The living summary — folded-down past events (≤80 words).' },
+      entries: { doc: 'Recent clock-stamped memory lines, e.g. "Day 2, evening: The fight is over…".' },
     },
   },
   clock: {

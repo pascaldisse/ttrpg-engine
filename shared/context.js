@@ -93,6 +93,10 @@ export function buildLookFrame(entities, pcId) {
         : ' Carrying: nothing of note.';
       const acting = pc && id === pc[0] ? ' ← ACTING' : '';
       parts.push(`- **${idn.name || id}** (${id})${hpStr}${conds}${carried}${acting}`);
+      // P6: the living summary — what this character has been through stays
+      // canon even after the rolling window forgets it.
+      const log = comps.lifelog || {};
+      if (log.summary) parts.push(`  Their story so far: ${log.summary}`);
     }
   }
 
@@ -202,6 +206,14 @@ export function buildNpcContext({ npc, look, playerText, npcMemory, directorNote
     role: 'system',
     content: derivedPrompt + (knowledgeBlock ? '\n\n' + knowledgeBlock : ''),
   });
+
+  // 1.5 P6: the NPC's own lifelog — durable memory that outlives the window.
+  const log = npc.lifelog || {};
+  const remembered = [
+    log.summary ? `What you remember of your story so far: ${log.summary}` : '',
+    (log.entries || []).length ? `Recently: ${log.entries.slice(-4).join(' | ')}` : '',
+  ].filter(Boolean).join('\n');
+  if (remembered) messages.push({ role: 'system', content: remembered });
 
   // 2. NPC memory — recent witnessed beats as history
   messages.push(...(npcMemory || []));
