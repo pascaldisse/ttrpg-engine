@@ -145,6 +145,10 @@
     },
     "flags": {
       "damage": "1d6"
+    },
+    "art": {
+      "prompt": "Portrait of a young apocalypse survivor in a leather jacket, katana hilt over shoulder, neon-lit determined face",
+      "image": null
     }
   },
   "item-katana": {
@@ -228,6 +232,10 @@
       "trust_player": 0,
       "ally": true,
       "damage": "1d6"
+    },
+    "art": {
+      "prompt": "Portrait of a Las Vegas Elvis impersonator preacher, half-burned sequined jumpsuit, pump shotgun, manic grin, neon light",
+      "image": null
     }
   },
   "npc-imp-1": {
@@ -284,6 +292,10 @@
     "flags": {
       "hostile": true,
       "damage": "1d3"
+    },
+    "art": {
+      "prompt": "Portrait of a knee-high bruise-colored imp, all teeth and claws, dripping black ichor, gleeful and vicious",
+      "image": null
     }
   },
   "npc-imp-2": {
@@ -340,6 +352,10 @@
     "flags": {
       "hostile": true,
       "damage": "1d3"
+    },
+    "art": {
+      "prompt": "Portrait of a knee-high bruise-colored imp, all teeth and claws, dripping black ichor, gleeful and vicious",
+      "image": null
     }
   },
   "npc-imp-3": {
@@ -396,6 +412,10 @@
     "flags": {
       "hostile": true,
       "damage": "1d3"
+    },
+    "art": {
+      "prompt": "Portrait of a knee-high bruise-colored imp, all teeth and claws, dripping black ichor, gleeful and vicious",
+      "image": null
     }
   },
   "npc-imp-4": {
@@ -452,6 +472,10 @@
     "flags": {
       "hostile": true,
       "damage": "1d3"
+    },
+    "art": {
+      "prompt": "Portrait of a knee-high bruise-colored imp, all teeth and claws, dripping black ichor, gleeful and vicious",
+      "image": null
     }
   },
   "loc-strip": {
@@ -547,6 +571,8 @@
     }
   },
   "world-state": {
-    "flags": {}
+    "flags": {
+      "artStyle": "B-movie horror comic, neon and fire, pulpy grindhouse poster style"
+    }
   }
 }

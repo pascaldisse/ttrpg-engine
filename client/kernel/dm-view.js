@@ -289,7 +289,20 @@ export class DMView {
       }
     });
 
-    this.stageEl.append(spawnRow, checkRow, speakRow, combatRow,
+    // P5: the mood knob — drives every player's music engine immediately.
+    const moodRow = el('div', { className: 'flex gap-1 items-center flex-wrap' }, [
+      el('span', { className: 'text-[10px] uppercase text-gray-500 w-14' }, ['mood']),
+      ...['calm', 'eerie', 'tense', 'combat', 'somber', 'auto'].map((m) =>
+        el('button', {
+          className: 'text-[11px] px-2 py-0.5 rounded border border-gray-700 text-gray-300 hover:bg-gray-800',
+          onclick: () => {
+            this.net && this.net.sendControl({ action: 'setMood', value: m === 'auto' ? null : m });
+            status.textContent = m === 'auto' ? '✓ mood follows the world again' : `✓ mood set: ${m}`;
+          },
+        }, [m])),
+    ]);
+
+    this.stageEl.append(spawnRow, checkRow, speakRow, combatRow, moodRow,
       el('div', { className: 'flex items-center gap-2 mt-1' }, [sendBtn, status]));
   }
 

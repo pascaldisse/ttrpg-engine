@@ -406,7 +406,9 @@ export function generateSkeleton(config = {}, rng) {
 
   // ---- 8. world-state singleton ---------------------------------------------
 
-  entities['world-state'] = { flags: {} };
+  // artStyle is the world's visual anchor — appended to EVERY art prompt by the
+  // art engine so all generations read as one art-directed game (P5).
+  entities['world-state'] = { flags: { artStyle: 'dark fantasy oil painting, muted gloomy palette, cinematic lighting' } };
 
   return { entities, meta };
 }

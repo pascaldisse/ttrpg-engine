@@ -7,6 +7,7 @@
 import { SessionStore } from './kernel/store.js';
 import { NetClient } from './kernel/net.js';
 import { View } from './kernel/view.js';
+import { MusicEngine } from './kernel/music.js';
 
 const PORT = typeof __TTRPG_PORT__ !== 'undefined' ? __TTRPG_PORT__ : '8420';
 const HTTP = `http://${location.hostname}:${PORT}`;
@@ -73,6 +74,38 @@ document.getElementById('new-game').addEventListener('click', () => {
   if (!confirm('Start a new game? The current world state will be reset to the campaign start.')) return;
   net.sendOps([{ op: 'reset' }]);
 });
+
+// ---- Mood music (procedural Web Audio — the 🔊 header toggle) ----
+
+const music = new MusicEngine();
+const musicBtn = document.getElementById('music-toggle');
+
+function currentMood() {
+  // my PC → its location's map style; night darkens; combat overrides; DM knob wins.
+  let locStyle = null;
+  for (const [, comps] of store.entities) {
+    if ((comps.identity || {}).kind === 'pc' && (comps.agent || {}).controller === who) {
+      const loc = store.entities.get((comps.place || {}).locationId);
+      locStyle = loc && loc.tiles ? loc.tiles.style : null;
+      break;
+    }
+  }
+  const ws = store.entities.get('world-state') || {};
+  const enc = (store.entities.get('encounter') || {}).encounter || {};
+  return music.resolveMood({
+    locStyle,
+    phase: (ws.clock || {}).phase,
+    inCombat: !!enc.active,
+    dmMood: (ws.flags || {}).mood || null,
+  });
+}
+
+if (musicBtn) {
+  const paint = () => { musicBtn.textContent = music.enabled ? '🔊' : '🔇'; musicBtn.title = music.enabled ? 'Music on' : 'Music off'; };
+  musicBtn.addEventListener('click', () => { music.toggle(); if (music.enabled) music.setMood(currentMood()); paint(); });
+  paint();
+}
+store.onChange(() => { if (music.enabled) music.setMood(currentMood()); });
 
 // ---- Connection dot ----
 

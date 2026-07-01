@@ -1657,6 +1657,8 @@
     }
   },
   "world-state": {
-    "flags": {}
+    "flags": {
+      "artStyle": "dark maritime fantasy oil painting, storm light, drowned greens and bruised greys"
+    }
   }
 }

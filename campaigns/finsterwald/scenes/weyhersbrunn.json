@@ -295,6 +295,10 @@
     },
     "flags": {
       "damage": "1d6+2"
+    },
+    "art": {
+      "prompt": "Portrait of a young medieval German swordsman, patched traveling cloak, plain arming sword, determined tired eyes",
+      "image": null
     }
   },
   "item-schwert": {
@@ -408,6 +412,10 @@
       "trust_player": 0,
       "ally": true,
       "damage": "1d3"
+    },
+    "art": {
+      "prompt": "Portrait of a stern middle-aged medieval German innkeeper woman, grey braid, strong forearms, worn apron, tavern candlelight",
+      "image": null
     }
   },
   "npc-bodo": {
@@ -486,6 +494,10 @@
       "afternoon": "loc-dorfplatz",
       "evening": "loc-gasthaus",
       "night": "loc-gasthaus"
+    },
+    "art": {
+      "prompt": "Portrait of an anxious heavyset medieval miller, flour-pale face, red-rimmed eyes, wrung woolen cap in his hands, rain-wet",
+      "image": null
     }
   },
   "npc-goblin-1": {
@@ -553,6 +565,10 @@
     "flags": {
       "hostile": true,
       "damage": "1d6+1"
+    },
+    "art": {
+      "prompt": "Portrait of a snarling red-furred goblin chief wearing a stolen Sunday hat, yellow darting eyes, cleaver over shoulder",
+      "image": null
     }
   },
   "npc-goblin-2": {
@@ -620,6 +636,10 @@
     "flags": {
       "hostile": true,
       "damage": "1d6"
+    },
+    "art": {
+      "prompt": "Portrait of a scrawny cowardly goblin draped in flour sacks, hissing grin, one ear notched",
+      "image": null
     }
   },
   "npc-goblin-3": {
@@ -687,6 +707,10 @@
     "flags": {
       "hostile": true,
       "damage": "1d6"
+    },
+    "art": {
+      "prompt": "Portrait of a dim one-eared runt goblin clutching a notched club, guarding a footbridge",
+      "image": null
     }
   },
   "item-amulett": {
@@ -752,6 +776,8 @@
     }
   },
   "world-state": {
-    "flags": {}
+    "flags": {
+      "artStyle": "dark fairy tale oil painting, muted earthy palette, Grimm brothers mood, candlelight"
+    }
   }
 }

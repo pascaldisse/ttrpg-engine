@@ -125,8 +125,15 @@ export function createArtEngine({ worldDir, provider }) {
    */
   async function artFor(entityId, entities) {
     const comps = entities.get(entityId);
-    const prompt = comps && comps.art && comps.art.prompt;
+    let prompt = comps && comps.art && comps.art.prompt;
     if (!prompt) return null;
+
+    // P5 consistency hammer: the world's style anchor (world-state.flags.artStyle)
+    // rides on EVERY prompt, so heterogeneous generations read as one game.
+    const style = ((entities.get('world-state') || {}).flags || {}).artStyle;
+    if (style && !prompt.toLowerCase().includes(String(style).slice(0, 24).toLowerCase())) {
+      prompt = `${prompt}, ${style}`;
+    }
 
     const hash = crypto.createHash('sha1').update(`${name}:${prompt}`).digest('hex').slice(0, 16);
     const hit = cached(hash);

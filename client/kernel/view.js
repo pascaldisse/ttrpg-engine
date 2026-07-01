@@ -518,14 +518,29 @@ export class View {
     const accent = data.accent || '#4a9eff';
     const isStreaming = !done && !!data.streamId;
 
+    // Portrait: the speaker's generated art if they have any; initial otherwise.
+    const portrait = el('div', {
+      className: 'w-8 h-8 rounded-full shrink-0 border border-dashed flex items-center justify-center text-xs overflow-hidden',
+      style: `border-color:${accent}66; color:${accent}`,
+      textContent: speaker.charAt(0).toUpperCase(),
+    });
+    if (data.by) {
+      const port = typeof __TTRPG_PORT__ !== 'undefined' ? __TTRPG_PORT__ : '8420';
+      const img = el('img', {
+        src: `http://${location.hostname}:${port}/art/${encodeURIComponent(data.by)}`,
+        className: 'w-full h-full object-cover',
+        alt: speaker,
+      });
+      img.onload = () => {
+        portrait.textContent = '';
+        portrait.classList.remove('border-dashed');
+        portrait.appendChild(img);
+      };
+    }
+
     const entry = el('div', { className: 'py-2 border-b border-gray-800 last:border-0' }, [
       el('div', { className: 'flex items-start gap-2' }, [
-        // Portrait slot (empty box for now — P4 fills it)
-        el('div', {
-          className: 'w-8 h-8 rounded-full shrink-0 border border-dashed flex items-center justify-center text-xs',
-          style: `border-color:${accent}66; color:${accent}`,
-          textContent: speaker.charAt(0).toUpperCase(),
-        }),
+        portrait,
         // Speaker chip + text
         el('div', { className: 'flex-1 min-w-0' }, [
           el('span', {

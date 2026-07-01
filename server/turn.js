@@ -159,7 +159,9 @@ export function createTurnEngine({ session, broadcast, applyAndBroadcast, dmAgen
         const token = atMatch[1].toLowerCase();
         for (const npc of presentNpcs) {
           const npcName = (npc.name || '').toLowerCase();
-          if (npcName.startsWith(token) || npcName === token) {
+          // Match any word of the name: "@Travine" reaches "Wirtin Travine".
+          const words = npcName.split(/\s+/);
+          if (npcName.startsWith(token) || words.some(w => w.startsWith(token))) {
             const cleanText = actionText.replace(/@\S+\s*/, '').trim() || 'Hello.';
             await npcAgent.respond(npc.npcId, speakerPrefix(pcEntry, cleanText), '', pcId);
             return;

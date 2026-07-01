@@ -35,6 +35,7 @@ const InhabitantSchema = z.object({
   voice: z.string().optional(),
   facts: z.array(z.string()).optional(),
   secrets: z.array(z.string()).optional(),
+  artPrompt: z.string().optional(),
 }).passthrough();
 
 const LocationChargeSchema = z.object({
@@ -215,7 +216,8 @@ async function chargeLocation(entities, meta, locId, theme, llm, sessionId) {
     `Give friendly characters a distinct personality, a short backstory, a voice cue, and 1-3`,
     `"facts" (public knowledge) plus 0-2 "secrets". Enemies need only a name + menacing description`,
     `+ short personality. Items need a name + description. The player character needs a name + a`,
-    `one-line description. Reuse the EXACT ids given; do not invent new ids.`,
+    `one-line description. Every CHARACTER (friend or foe) also gets an "artPrompt" — a one-line`,
+    `portrait prompt (face/garb/mood). Reuse the EXACT ids given; do not invent new ids.`,
   ].filter(Boolean).join('\n');
 
   const user = [
@@ -269,6 +271,10 @@ function applyLocationCharge(entities, locId, parsed) {
     if (e.knowledge) {
       if (Array.isArray(o.facts)) e.knowledge.facts = o.facts;
       if (Array.isArray(o.secrets)) e.knowledge.secrets = o.secrets;
+    }
+    // P5: character portraits — the LLM's portrait prompt becomes art-as-data.
+    if (o.artPrompt && (e.identity || {}).kind !== 'item') {
+      e.art = { prompt: o.artPrompt, image: null };
     }
   }
 }
