@@ -255,13 +255,14 @@ export function createTurnEngine({ session, broadcast, applyAndBroadcast, dmAgen
       // The ruleset's default check kind wins (necro-test / …); an explicit
       // per-check kind from the ruling wins over that; bare 5e is the fallback.
       const kind = checkReq.check || (defaultCheck && defaultCheck.kind) || 'ability-check';
-      const dcFallback = (defaultCheck && defaultCheck.dcDefault) || 12;
+      // ?? not ||: dc 0 is meaningful in roll-under systems (DSA Erschwernis ±0).
+      const dcFallback = (defaultCheck && defaultCheck.dcDefault) ?? 12;
       const result = resolveCheck(
         {
           check: kind,
           ability: checkReq.ability || 'wis',
           skill: checkReq.skill,
-          dc: checkReq.dc || dcFallback,
+          dc: checkReq.dc ?? dcFallback,
           reason: checkReq.reason || '',
         },
         { stats: pcStats, proficiency: pcProficiency },

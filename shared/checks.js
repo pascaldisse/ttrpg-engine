@@ -187,7 +187,7 @@ export function resolveCheck(checkDef, ctx, rng) {
     const fallback = CHECK_DEFS['ability-check'];
     const rolls = [rng.d(fallback.dice.sides)];
     const mod = fallback.modSource({ ...ctx, ...checkDef });
-    const dc = checkDef.dc || 10;
+    const dc = checkDef.dc ?? 10;
     return fallback.resolve(rolls, mod, dc, fallback, { ...ctx, ...checkDef });
   }
 
@@ -199,7 +199,8 @@ export function resolveCheck(checkDef, ctx, rng) {
 
   // Compute modifier from actor context
   const mod = def.modSource({ ...ctx, ...checkDef });
-  const dc = checkDef.dc || 10;
+  // ?? not ||: dc 0 is a legal difficulty in roll-under systems (DSA Erschwernis ±0).
+  const dc = checkDef.dc ?? 10;
 
   return def.resolve(rolls, mod, dc, def, { ...ctx, ...checkDef });
 }

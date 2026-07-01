@@ -8,6 +8,7 @@
     "test": "node --test --test-timeout=30000 --test-force-exit test/*.test.mjs",
     "dev": "concurrently -k \"node --env-file-if-exists=.env server/index.js\" \"vite\"",
     "play:necrotopia": "concurrently -k \"TTRPG_WORLD=campaigns/necrotopia TTRPG_RULESET=necrotopia node --env-file-if-exists=.env server/index.js\" \"vite\"",
+    "play:dsa": "concurrently -k \"TTRPG_WORLD=campaigns/finsterwald TTRPG_RULESET=dsa5 node --env-file-if-exists=.env server/index.js\" \"vite\"",
     "server": "node --env-file-if-exists=.env server/index.js",
     "worldgen": "node --env-file-if-exists=.env tools/worldgen.mjs",
     "smoke:necrotopia": "node tools/smoke-necrotopia.mjs",

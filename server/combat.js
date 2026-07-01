@@ -458,6 +458,18 @@ export function createCombatEngine({ session, broadcast, applyAndBroadcast, awar
   /** Deterministic instinct turn: a Move (or basic attack) against the actor's foes. Zero LLM. */
   function runInstinct(actorId) {
     const { move, targetId } = enemyInstinct(actorId, getEncounter(), session.entities, session.rng(), combatRules);
+    // Close distance first: a melee action against a target in another zone would
+    // whiff "out of range" every round — spend the turn moving to the target's zone.
+    if (targetId && (!move || (move.range || 'melee') === 'melee')) {
+      const from = zoneOf(session.entities, actorId);
+      const to = zoneOf(session.entities, targetId);
+      if (from !== to) {
+        const zone = ((getEncounter() || {}).zones || []).find(z => z.id === to);
+        applyOps([{ op: 'moveZone', id: actorId, zoneId: to }]);
+        banner('turn', `${nameOf(actorId)} rushes to ${(zone && zone.label) || to}, closing in on ${nameOf(targetId)}.`);
+        return;
+      }
+    }
     if (move) doMove(actorId, move, targetId, '');
     else if (targetId) doAttack(actorId, targetId);
   }
@@ -514,7 +526,7 @@ export function createCombatEngine({ session, broadcast, applyAndBroadcast, awar
         {
           check: c.check || (defaultCheck && defaultCheck.kind) || 'ability-check',
           ability: c.ability, skill: c.skill,
-          dc: c.dc || (defaultCheck && defaultCheck.dcDefault) || 12,
+          dc: c.dc ?? ((defaultCheck && defaultCheck.dcDefault) ?? 12),
           reason: c.reason || '',
         },
         { stats: pcStats, proficiency },
@@ -550,18 +562,17 @@ export function createCombatEngine({ session, broadcast, applyAndBroadcast, awar
 
   // ---- target selection ----
 
-  /** Present, living, hostile NPCs at the PC's location. */
-  function presentHostiles() {
-    const here = pcLocationId(session.entities);
+  /** Present, living, hostile NPCs at a location (default: the first PC's — pass
+   *  the ACTING PC's location in multiplayer, where party members roam apart). */
+  function presentHostiles(here = pcLocationId(session.entities)) {
     if (!here) return [];
     return entitiesAt(session.entities, here, { kinds: ['npc'] })
       .filter(([_id, c]) => (c.flags || {}).hostile === true)
       .map(([id]) => id);
   }
 
-  /** Present, living, FRIENDLY combatants (flags.ally) at the PC's location — party seats (C5). */
-  function presentAllies() {
-    const here = pcLocationId(session.entities);
+  /** Present, living, FRIENDLY combatants (flags.ally) at a location — party seats (C5). */
+  function presentAllies(here = pcLocationId(session.entities)) {
     if (!here) return [];
     return entitiesAt(session.entities, here, { kinds: ['npc'] })
       .filter(([_id, c]) => (c.flags || {}).ally === true && (c.status || {}).alive !== false)
@@ -677,20 +688,22 @@ export function createCombatEngine({ session, broadcast, applyAndBroadcast, awar
   function detectInitiation(actionOp) {
     const actionText = typeof actionOp === 'string' ? actionOp : (actionOp.text || '');
     const reqTarget = (typeof actionOp === 'object' && actionOp.target) || null;
-    const enemies = presentHostiles();
-    if (enemies.length === 0) return null;
+    // Scope everything to the ACTING PC's location — in multiplayer the party
+    // roams apart, and hostiles at the first PC's location are the wrong fight.
     const pc = actingPcId(typeof actionOp === 'object' ? actionOp : null) || pcId();
     if (!pc) return null;
+    const here = ((session.entities.get(pc) || {}).place || {}).locationId || null;
+    const enemies = presentHostiles(here);
+    if (enemies.length === 0) return null;
 
     const targetIsHostile = reqTarget && enemies.includes(reqTarget);
     if (!ATTACK_RE.test(actionText) && !targetIsHostile) return null;
 
     const targetId = targetIsHostile ? reqTarget : (pickTarget(actionText, enemies) || enemies[0]);
     // C5/multiplayer: every party PC here + friendly combatants join the party side.
-    const here = ((session.entities.get(pc) || {}).place || {}).locationId || null;
     const pcs = partyAt(here);
-    const allies = [...(pcs.length ? pcs : [pc]), ...presentAllies()];
-    return { targetId, enemies, allies };
+    const allies = [...(pcs.length ? pcs : [pc]), ...presentAllies(here)];
+    return { targetId, enemies, allies, here };
   }
 
   /**
@@ -702,17 +715,19 @@ export function createCombatEngine({ session, broadcast, applyAndBroadcast, awar
       ? buildTimeline({ allies: initiation.allies, enemies: initiation.enemies }, session.entities, combatRules)
       : buildEncounter({ allies: initiation.allies, enemies: initiation.enemies }, session.entities, session.rng(), combatRules);
 
-    // C4: attach authored combat zones from the PC's location (flags.combatZones); a
-    // scene with none ⇒ a single implicit 'field' zone. Place any unpositioned combatant.
-    const here = pcLocationId(session.entities);
+    // C4: attach authored combat zones from the BATTLEFIELD location (the acting
+    // PC's, threaded through initiation.here); a scene with none ⇒ one 'field' zone.
+    const here = initiation.here || pcLocationId(session.entities);
     const loc = here ? session.entities.get(here) : null;
     const zones = (loc && loc.flags && loc.flags.combatZones) || [];
     enc.zones = zones;
     enc.hazards = [];
     if (zones.length) {
+      // Snap anyone unpositioned OR carrying a zoneId from another location.
+      const valid = new Set(zones.map(z => z.id));
       for (const id of [...initiation.allies, ...initiation.enemies]) {
         const c = session.entities.get(id);
-        if (!c || (c.position && c.position.zoneId)) continue;
+        if (!c || valid.has((c.position || {}).zoneId)) continue;
         applyAndBroadcast([{ op: 'merge', id, component: 'position', value: { zoneId: zones[0].id } }], 'combat');
       }
     }
@@ -825,14 +840,14 @@ export function createCombatEngine({ session, broadcast, applyAndBroadcast, awar
    */
   async function beginEncounter(actionOp = { text: '' }) {
     if (inCombat()) return false;
-    const enemies = presentHostiles();
-    if (enemies.length === 0) return false;
     const pc = actingPcId(actionOp) || pcId();
     if (!pc) return false;
     const here = ((session.entities.get(pc) || {}).place || {}).locationId || null;
+    const enemies = presentHostiles(here);
+    if (enemies.length === 0) return false;
     const pcs = partyAt(here);
-    const allies = [...(pcs.length ? pcs : [pc]), ...presentAllies()];
-    await startAndResolve(actionOp, { targetId: enemies[0], enemies, allies });
+    const allies = [...(pcs.length ? pcs : [pc]), ...presentAllies(here)];
+    await startAndResolve(actionOp, { targetId: enemies[0], enemies, allies, here });
     return true;
   }
 

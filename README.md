@@ -14,6 +14,7 @@ full offline mode with a deterministic mock. Scene art: free keyless generation
 ```bash
 npm install
 npm run play:necrotopia    # the shipped campaign (or `npm run dev` for the 5e demo world)
+npm run play:dsa           # Der Finsterwald — DSA-style 3W20 roll-under campaign
 ```
 
 - Player client: `http://localhost:5173` — every browser (or friend on your LAN)
@@ -27,6 +28,12 @@ Padre Salt at your side, then escape to the Strip and steal the idling Cadillac.
 
 No API key? It runs fully offline: `LLM_PROVIDER=mock npm run play:necrotopia`
 (canned narration, real combat/quests/dice).
+
+**Three rulesets, one engine** — the same seams run D&D 5e (d20 roll-over-DC),
+Necrotopia (d6 roll-over-Armor), and DSA (3W20 roll-UNDER with skill-point
+compensation, quality levels, and Attacke/Parade combat). In `play:dsa` you are
+Alrik in the rain-soaked village of Weyhersbrunn: goblins hold the old mill, and
+the reason they left the deep woods is worse than they are.
 
 ## What's in the box
 

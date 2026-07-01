@@ -162,7 +162,7 @@ export function createDmAgent({ session, broadcast, applyAndBroadcast, llm, rule
   // How the DM asks for dice: the ruleset's default check kind + DC guidance,
   // else the built-in 5e ability-check. Keeps the adjudicator rules-agnostic.
   const checkSpec = defaultCheck && defaultCheck.kind
-    ? { kind: defaultCheck.kind, dcDoc: defaultCheck.dcDoc || 'a difficulty appropriate to the ruleset', shape: `{check:"${defaultCheck.kind}", dc, reason}` }
+    ? { kind: defaultCheck.kind, dcDoc: defaultCheck.dcDoc || 'a difficulty appropriate to the ruleset', shape: defaultCheck.shape || `{check:"${defaultCheck.kind}", dc, reason}` }
     : { kind: 'ability-check', dcDoc: 'DC 5–30 (10 easy, 15 moderate, 20 hard)', shape: '{ability, skill?, dc, reason}' };
   // Archetypes the DM may spawn (world-first). Empty when the ruleset ships no
   // actorTemplates → the DM keeps no spawn power (5e/DSA unaffected).
@@ -396,7 +396,7 @@ export function createDmAgent({ session, broadcast, applyAndBroadcast, llm, rule
 
     const messages = [
       { role: 'system', content: `${COMBAT_ADJUDICATE_PROMPT}\n\nThe check kind is "${checkSpec.kind}"; for "dc" use ${checkSpec.dcDoc}.\nLiving enemies: ${(enemyIds || []).join(', ') || '(none)'}\nThe PC id is "${pcId}".\nZones: ${zoneList}\nPositions: ${positions}` },
-      { role: 'user', content: `Improvised combat action: "${actionText}"\n\nRespond JSON ONLY: {"checks":[{check:"${checkSpec.kind}", dc, reason}], "ops":[<applyStatus/damage/spawnHazard for the SUCCESS case>]}` },
+      { role: 'user', content: `Improvised combat action: "${actionText}"\n\nRespond JSON ONLY: {"checks":[${checkSpec.shape}], "ops":[<applyStatus/damage/spawnHazard for the SUCCESS case>]}` },
     ];
 
     try {

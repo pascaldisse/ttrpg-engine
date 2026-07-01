@@ -43,7 +43,8 @@ export async function bootServer(extraEnv = {}) {
     await sleep(100);
   }
 
-  const savePath = path.join(ROOT, 'campaigns/necrotopia/saves', `session_${save}.json`);
+  const world = extraEnv.TTRPG_WORLD || 'campaigns/necrotopia';
+  const savePath = path.join(ROOT, world, 'saves', `session_${save}.json`);
   return {
     port,
     child,

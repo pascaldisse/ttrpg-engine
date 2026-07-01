@@ -1,10 +1,15 @@
 # Authoring a Ruleset Bundle
 
 A ruleset is **pure data + tiny pure functions** in one directory. The engine
-never names your system; you plug mechanics into seams. Necrotopia
-(`campaigns/necrotopia/ruleset/necrotopia/`) is the complete worked example —
-d6-over-Armor combat, custom Moves, statuses, overdrive, actor templates, in
-~360 lines with zero imports.
+never names your system; you plug mechanics into seams. Two complete worked
+examples ship in the repo:
+
+- **Necrotopia** (`campaigns/necrotopia/ruleset/necrotopia/`) — d6-over-Armor
+  combat, custom Moves, statuses, overdrive, actor templates, ~360 lines.
+- **DSA5** (`campaigns/finsterwald/ruleset/dsa5/`) — the adversarial proof:
+  3d20 ROLL-UNDER Talentproben with skill-point compensation and quality
+  levels, Attacke/Parade/RS combat, INI-driven timeline. If your system is
+  "roll low," start here.
 
 ## Layout
 
@@ -60,6 +65,12 @@ export const checks = {
 Without it the engine falls back to 5e ability-checks.
 ```js
 export const defaultCheck = { kind: 'my-test', dcDoc: 'a difficulty from 2 (easy) to 9 (heroic)', dcDefault: 5 };
+```
+`dc` may legally be 0 or negative (roll-under systems use signed modifiers).
+An optional `shape` string overrides how the DM is told to format check
+requests — DSA uses it to demand a Talent name:
+```js
+shape: '{check:"talent-probe", skill:"<Talent, e.g. Sinnesschärfe|Klettern>", dc, reason}'
 ```
 
 ### `statuses` — effects that tick

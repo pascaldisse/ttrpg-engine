@@ -124,11 +124,16 @@ const SEMANTIC_HANDLERS = {
     ];
   },
 
-  /** {op:'move', id, to} → merge place {locationId: to} (preserves connections) */
+  /** {op:'move', id, to} → merge place {locationId: to} (preserves connections).
+   *  Combat zones are per-location, so a stale zoneId is cleared on arrival —
+   *  encounter start re-seats anyone unpositioned into the new location's zones. */
   move(entities, op) {
-    return [
-      { op: 'merge', id: op.id, component: 'place', value: { locationId: op.to } },
-    ];
+    const ops = [{ op: 'merge', id: op.id, component: 'place', value: { locationId: op.to } }];
+    const mover = entities.get(op.id);
+    if (mover && mover.position && mover.position.zoneId) {
+      ops.push({ op: 'merge', id: op.id, component: 'position', value: { zoneId: null } });
+    }
+    return ops;
   },
 
   /**
