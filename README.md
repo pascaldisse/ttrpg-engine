@@ -78,12 +78,22 @@ the reason they left the deep woods is worse than they are.
 ## Scripts
 
 ```bash
-npm run play:necrotopia   # the shipped campaign
+npm run play:necrotopia   # the shipped campaign (d6 apocalypse)
+npm run play:dsa          # Der Finsterwald (3W20 roll-under)
+npm run play:lanternfall  # the GENERATED campaign (24 locations, 6 regions, 5 quests)
 npm run dev               # server + client on ./world (5e demo)
 npm test                  # unit + integration suite (boots real servers, offline)
 npm run smoke:necrotopia  # ruleset smoke checks
-npm run worldgen -- --theme "haunted salt marsh" --size small --out world/scenes/marsh.json
+npm run worldgen -- --theme "haunted salt marsh" --size large --out world/scenes/marsh.json
 ```
+
+**Worldgen v2** builds region-structured worlds: a chain of settlement → wilds →
+dungeon regions linked by roads, enemy packs distributed across the map, a boss
+lair at the far end, and a side quest per pack/relic beside the main quest.
+Procgen owns structure (connectivity, placement, triggers); the LLM charges the
+skeleton with meaning (region names first, then every location with region
+context). Sizes: `small` 4 locations · `medium` 10 · `large` 24 · `epic` 36, or
+`--locations N --regions K`. Generated once → fixed data you can hand-edit.
 
 ## HTTP API
 

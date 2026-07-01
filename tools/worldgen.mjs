@@ -11,8 +11,9 @@
  *
  * Flags:
  *   --theme "<text>"     flavor seed for names/descriptions (default: low-fantasy)
- *   --size small|medium|large   world scale (default: small)
+ *   --size small|medium|large|epic   world scale (default: small; large=24 locs, epic=36)
  *   --locations <n>      explicit location count (overrides --size's count)
+ *   --regions <n>        explicit region count (settlement/wilds/dungeon chain)
  *   --seed <n>           PRNG seed for the skeleton (default: 42; same seed ⇒ same bones)
  *   --provider mock|deepseek    LLM provider (default: respects LLM_PROVIDER, else deepseek)
  *   --out <path>         output scene JSON (default: world/scenes/generated.json)
@@ -38,6 +39,7 @@ function parseArgs(argv) {
     if (a === '--theme') out.theme = next();
     else if (a === '--size') out.size = next();
     else if (a === '--locations') out.locations = parseInt(next(), 10);
+    else if (a === '--regions') out.regions = parseInt(next(), 10);
     else if (a === '--seed') out.seed = parseInt(next(), 10);
     else if (a === '--provider') { process.env.LLM_PROVIDER = next(); }
     else if (a === '--out') out.outPath = next();
@@ -51,8 +53,9 @@ const HELP = `worldgen — generate a TTRPG world as data.
   node --env-file-if-exists=.env tools/worldgen.mjs [flags]
 
   --theme "<text>"   flavor seed (e.g. "haunted salt marsh")
-  --size small|medium|large    default small
+  --size small|medium|large|epic    default small (large=24 locs, epic=36)
   --locations <n>    explicit location count
+  --regions <n>      explicit region count
   --seed <n>         skeleton PRNG seed (default 42)
   --provider mock|deepseek   default: env LLM_PROVIDER, else deepseek
   --out <path>       output scene JSON (default world/scenes/generated.json)
@@ -69,6 +72,7 @@ const HELP = `worldgen — generate a TTRPG world as data.
   const { entities, meta, charged, failed } = await generateWorld({
     size: opts.size,
     locations: opts.locations,
+    regions: opts.regions,
     seed: opts.seed,
     theme: opts.theme,
     llm,

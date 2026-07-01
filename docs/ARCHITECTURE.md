@@ -106,6 +106,24 @@ See `campaigns/necrotopia/ruleset/necrotopia/` for a complete worked example and
   caches to `<world>/cache/art/`. Providers: pollinations (default, keyless),
   mock (offline SVG), openai (opt-in).
 
+## World generation (`shared/worldgen-skeleton.js` + `server/worldgen.js`)
+
+Two passes, sharp boundary — procgen owns **structure**, the LLM owns **meaning**:
+
+1. **Skeleton (pure, deterministic)** — regions chained by roads (settlement →
+   wilds/dungeon/landmark → boss dungeon), each internally connected with
+   chords; enemy packs distributed per region; boss + prize at the lair (the far
+   end of the chain); one main quest + a side quest per pack/relic, every
+   trigger wired to real ids. Same seed ⇒ byte-identical world.
+2. **Charge (LLM, best-effort)** — one call names all regions, then each
+   location is charged with region context and already-named neighbors, then the
+   quests. Any failed call falls back to deterministic placeholders — generation
+   never aborts.
+
+Output is a scene JSON in the exact shape the Session seeds from: **generated
+once → fixed data**. The LLM never re-invents geometry at runtime; it reads the
+world. `campaigns/lanternfall/` is a shipped 24-location example.
+
 ## Persistence
 
 `server/session.js`: debounced save per slot (`TTRPG_SAVE`), flushed on
