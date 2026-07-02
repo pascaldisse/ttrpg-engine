@@ -1,0 +1,7 @@
+{
+  "id": "addon-world",
+  "name": "World Addon",
+  "version": "1.0.0",
+  "description": "Test fixture: an addon that ships a full campaign.",
+  "world": "world"
+}

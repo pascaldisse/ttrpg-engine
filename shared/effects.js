@@ -41,16 +41,45 @@ export function expandOp(entities, op) {
 
 /**
  * Expand a batch of ops.
+ *
+ * Ops later in the batch see the effects of earlier ones: each op expands
+ * against a copy-on-write OVERLAY of the store that the already-expanded
+ * canonical ops are applied to. Without this, two `damage 5` ops on the same
+ * target would both read the original hp and the second would overwrite the
+ * first (stale-read bug). The real store is never mutated here.
+ *
  * @param {Map<string,object>} entities
  * @param {object[]} ops
  * @returns {object[]}
  */
 export function expandOps(entities, ops) {
+  const view = new Map(entities); // shallow copy — entity objects shared until touched
   const result = [];
   for (const op of ops) {
-    result.push(...expandOp(entities, op));
+    for (const canonical of expandOp(view, op)) {
+      result.push(canonical);
+      previewOp(view, canonical);
+    }
   }
   return result;
+}
+
+/** Apply one canonical op to the overlay view (cloning touched entities only). */
+function previewOp(view, op) {
+  if (!op || !op.id) return;
+  if (op.op === 'merge' && op.component) {
+    const comps = { ...(view.get(op.id) || {}) };
+    comps[op.component] = { ...(comps[op.component] || {}), ...(op.value || {}) };
+    view.set(op.id, comps);
+  } else if (op.op === 'set' && op.component) {
+    const comps = { ...(view.get(op.id) || {}) };
+    comps[op.component] = op.value;
+    view.set(op.id, comps);
+  } else if (op.op === 'spawn') {
+    view.set(op.id, op.components || {});
+  } else if (op.op === 'despawn') {
+    view.delete(op.id);
+  }
 }
 
 // ---- Semantic handlers ----
@@ -250,6 +279,21 @@ const SEMANTIC_HANDLERS = {
   },
 };
 
+
+/**
+ * Register additional semantic op handlers (EXTENSION SEAM — rulesets/addons).
+ * A handler is (entities, op) => canonicalOps[]. Same contract as the built-ins:
+ * read-only against the store, return merge/set ops, clamp your own numbers —
+ * the LLM proposes, the handler is where the rules get to say no.
+ * Mirrors registerChecks/registerComponents/registerStatuses.
+ *
+ * @param {Record<string,(entities:Map<string,object>, op:object)=>object[]>} handlers
+ */
+export function registerEffects(handlers) {
+  for (const [kind, fn] of Object.entries(handlers || {})) {
+    if (typeof fn === 'function') SEMANTIC_HANDLERS[kind] = fn;
+  }
+}
 
 /**
  * Get the set of supported semantic op types (for the LLM prompt).

@@ -401,11 +401,16 @@ export function createCombatEngine({ session, broadcast, applyAndBroadcast, awar
   function checkMorale() {
     const enc = getEncounter();
     if (!enc) return;
-    const threshold = combatRules.moraleThreshold ?? 0.34;
+    const defaultThreshold = combatRules.moraleThreshold ?? 0.34;
     const livingEnemies = (enc.enemies || []).filter(isAlive);
     for (const id of livingEnemies) {
       if (!isAgentEnemy(id)) continue;
       const comps = session.entities.get(id) || {};
+      // Per-entity override: flags.moraleThreshold. 0 (or less) = unbreakable —
+      // this combatant fights to the end (bosses whose "break" is scripted, duel
+      // partners whose gauge must fill, spirits that ARE their wound).
+      const threshold = (comps.flags || {}).moraleThreshold ?? defaultThreshold;
+      if (threshold <= 0) continue;
       if ((comps.flags || {}).morale === 'shaken') continue;
       const lonely = livingEnemies.length === 1 && (enc.enemies || []).length > 1;
       if (moraleShaken(comps, threshold, lonely)) {

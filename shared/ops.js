@@ -10,6 +10,7 @@
 
 import { z } from 'zod';
 import { SCHEMA } from './schema.js';
+import { semanticOpTypes } from './effects.js';
 
 // ---- Op shapes (Zod schemas) ----
 
@@ -174,24 +175,42 @@ export const opUnion = z.discriminatedUnion('op', [
 
 const batchSchema = z.array(opUnion);
 
+/** The op kinds the static union above covers (strictly schema-validated). */
+const BUILTIN_KINDS = new Set([
+  'spawn', 'set', 'merge', 'despawn', 'event', 'action', 'roll', 'reset',
+  'damage', 'heal', 'giveItem', 'takeItem', 'move', 'setFlag',
+  'take', 'drop', 'applyStatus', 'removeStatus',
+  'spawnHazard', 'clearHazard', 'moveZone', 'setMeter',
+]);
+
 /**
  * Validate a single op or batch of ops.
  * Returns {ok:true, ops} or {ok:false, error:string}.
- * Lenient on unknown op types: warns but does not reject.
+ *
+ * Ruleset/addon-REGISTERED semantic ops (registerEffects) are accepted with a
+ * minimal shape check — each handler is its own validator/clamp (that is the
+ * contract), and the registry isn't known at schema-definition time.
  */
 export function validateOpBatch(ops) {
   const arr = Array.isArray(ops) ? ops : [ops];
-  try {
-    const parsed = batchSchema.parse(arr);
-    return { ok: true, ops: parsed };
-  } catch (e) {
-    if (e instanceof z.ZodError) {
-      return { ok: false, error: e.errors.map(err =>
-        `[${err.path.join('.')}] ${err.message}`
-      ).join('; ') };
+  const out = [];
+  for (let i = 0; i < arr.length; i++) {
+    const op = arr[i];
+    const kind = op && typeof op === 'object' ? op.op : null;
+    if (kind && !BUILTIN_KINDS.has(kind) && semanticOpTypes().includes(kind)) {
+      out.push(op);
+      continue;
     }
-    return { ok: false, error: String(e) };
+    const r = opUnion.safeParse(op);
+    if (!r.success) {
+      return {
+        ok: false,
+        error: r.error.errors.map(err => `[${[i, ...err.path].join('.')}] ${err.message}`).join('; '),
+      };
+    }
+    out.push(r.data);
   }
+  return { ok: true, ops: out };
 }
 
 /**

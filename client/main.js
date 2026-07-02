@@ -8,6 +8,7 @@ import { SessionStore } from './kernel/store.js';
 import { NetClient } from './kernel/net.js';
 import { View } from './kernel/view.js';
 import { MusicEngine } from './kernel/music.js';
+import { mountAddons, initAddonSettings } from './kernel/addons.js';
 
 const PORT = typeof __TTRPG_PORT__ !== 'undefined' ? __TTRPG_PORT__ : '8420';
 const HTTP = `http://${location.hostname}:${PORT}`;
@@ -46,6 +47,12 @@ try {
 }
 
 net.connect();
+
+// ---- Addons (client plugins) + the ⚙ settings panel ----
+
+initAddonSettings({ button: document.getElementById('settings-toggle'), serverBase: HTTP });
+mountAddons({ serverBase: HTTP, store, net, view, who })
+  .catch(e => console.error('[main] addon mounting failed:', e));
 
 // ---- Action input ----
 

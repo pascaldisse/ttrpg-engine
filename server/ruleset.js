@@ -13,6 +13,7 @@ import { pathToFileURL } from 'node:url';
 import { registerComponents } from '../shared/schema.js';
 import { registerChecks } from '../shared/checks.js';
 import { registerStatuses } from '../shared/statuses.js';
+import { registerEffects } from '../shared/effects.js';
 
 /**
  * Load a ruleset bundle by id from the world directory.
@@ -46,6 +47,9 @@ export async function loadRuleset(id, worldDir) {
   registerComponents(mod.components || {});
   registerChecks(mod.checks || {});
   registerStatuses(mod.statuses || {});
+  // Bundle-supplied semantic ops (e.g. a bond/affection op with engine-side
+  // clamping) — the DM may emit them once system.md documents the shape.
+  registerEffects(mod.effects || {});
 
   let systemPrompt = '';
   try {
@@ -60,6 +64,7 @@ export async function loadRuleset(id, worldDir) {
     components: mod.components || {},
     checks: mod.checks || {},
     statuses: mod.statuses || {},
+    effects: mod.effects || {},
     combat: mod.combat || null,
     actorTemplates: mod.actorTemplates || null,
     // {kind, dcDoc, dcDefault} — the check the DM should request for generic

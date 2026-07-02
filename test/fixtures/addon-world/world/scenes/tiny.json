@@ -1,0 +1,18 @@
+{
+  "loc-fixture": {
+    "identity": { "name": "The Fixture Room", "kind": "location", "description": "A bare test chamber." },
+    "place": { "connections": [] },
+    "status": { "alive": true, "conditions": [] }
+  },
+  "pc-fixture": {
+    "identity": { "name": "Fixture Hero", "kind": "pc", "description": "A stick figure with a purpose." },
+    "place": { "locationId": "loc-fixture" },
+    "stats": { "hp": 10, "maxHp": 10 },
+    "status": { "alive": true, "conditions": [] },
+    "agent": { "enabled": false, "controller": null }
+  },
+  "world-state": {
+    "identity": { "name": "World", "kind": "world-state", "description": "Test world." },
+    "flags": {}
+  }
+}

@@ -152,6 +152,35 @@ entries into an ≤80-word living summary (fold-down, never silent eviction).
 Lifelogs reach the prompts (DM scene frame + NPC context) and power
 `GET /sense/recall?q=` keyword recall.
 
+## Addons (`server/addons.js` + `client/kernel/addons.js`)
+
+An addon is an out-of-tree directory with an `addon.json` manifest; the loader
+merges `addons.json` (persistent install list, editable via `POST
+/addons/config` from the ⚙ settings panel) with the `TTRPG_ADDONS` env var.
+An addon may ship any mix of:
+
+- **a world + ruleset** — when `TTRPG_WORLD` is unset, the first enabled
+  world-shipping addon becomes the campaign (its manifest `ruleset` is the
+  default). Seeds at boot, like any campaign.
+- **a server hook** — `register(ctx)` runs after every engine exists, with
+  `{session, applyEffects, registerRoute, dmAgent, combat, …}`. `applyEffects`
+  is the expand-then-apply path (semantic ops welcome); `session.onChange` is
+  the journal listener seam (the same one the memory engine uses).
+- **a client plugin** — served at `/addons/<id>/…` (traversal-guarded,
+  no-store) and dynamically imported by the player client; `mount()` receives
+  the store/net/view plus a dedicated root element. Per-browser toggles live in
+  localStorage; the ⚙ panel also drives server-side enable/disable and
+  install-by-path (client + server hooks load live; worlds need a reboot).
+- **DM-prompt extensions** — `systemAppend` files ride behind the ruleset's
+  system.md (style guides / house rules as data).
+
+Rulesets gained a fourth registry to match: `effects` →
+`registerEffects()` in shared/effects.js — bundle-defined SEMANTIC ops (e.g. a
+clamped affection meter). `validateOpBatch` accepts registered kinds (each
+handler is its own validator/clamp) and `applyAndBroadcast` expands semantic
+ops on every wire path, with batch expansion running against a copy-on-write
+overlay so ops later in a batch see earlier effects.
+
 ## Persistence
 
 `server/session.js`: debounced save per slot (`TTRPG_SAVE`), flushed on

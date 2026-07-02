@@ -7,6 +7,7 @@ client/dist/
 .env
 .env.*
 !.env.example
+addons.json
 .DS_Store
 **/.DS_Store
 **/cache/

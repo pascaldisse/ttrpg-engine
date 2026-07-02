@@ -22,20 +22,41 @@ import { createQuestEngine } from './quests.js';
 import { createMemoryEngine, recall } from './memory.js';
 import { createArtEngine } from './art.js';
 import { loadRuleset } from './ruleset.js';
+import { loadAddons, addonWorldOf, readSystemAppends, runServerHooks, createAddonHttp } from './addons.js';
+import { expandOps } from '../shared/effects.js';
 import { createDmAgent } from './agents/dm-agent.js';
 import { createNpcAgent } from './agents/npc-agent.js';
 import * as sense from './sense.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const ROOT_DIR = path.resolve(__dirname, '..');
 
 const TTRPG_PORT = parseInt(process.env.TTRPG_PORT || '8420', 10);
-const TTRPG_WORLD = process.env.TTRPG_WORLD || path.resolve(__dirname, '..', 'world');
 const TTRPG_SAVE = process.env.TTRPG_SAVE || 'default';
+
+// ---- Addons (plugins) ----
+// Discovered from addons.json + TTRPG_ADDONS before anything boots: an addon may
+// BE the campaign (world/ruleset), extend the DM prompt, and (below, after the
+// engines exist) register server hooks + serve a client plugin.
+const { addons, configFile: addonsConfigFile } = loadAddons({ rootDir: ROOT_DIR, env: process.env });
+
+// World resolution: explicit TTRPG_WORLD wins; else the first enabled addon that
+// ships a world (with its manifest ruleset as the default); else ./world.
+let TTRPG_WORLD = process.env.TTRPG_WORLD || null;
+let TTRPG_RULESET = process.env.TTRPG_RULESET || null;
+if (!TTRPG_WORLD) {
+  const aw = addonWorldOf(addons);
+  if (aw) {
+    TTRPG_WORLD = aw.world;
+    TTRPG_RULESET = TTRPG_RULESET || aw.ruleset;
+    console.log(`[addons] Campaign from addon "${aw.id}": ${aw.world}${aw.ruleset ? ` (ruleset ${aw.ruleset})` : ''}`);
+  }
+}
+if (!TTRPG_WORLD) TTRPG_WORLD = path.resolve(ROOT_DIR, 'world');
 
 // ---- Ruleset (rules-as-data) ----
 // If TTRPG_RULESET is set, load the bundle BEFORE seeding: it registers component
 // + check-def extensions and supplies the DM system prompt. No ruleset → built-in 5e.
-const TTRPG_RULESET = process.env.TTRPG_RULESET || null;
 let rulesetPrompt = null;
 let rulesetCombat = null;
 let rulesetActorTemplates = null;
@@ -51,6 +72,14 @@ if (TTRPG_RULESET) {
   } catch (e) {
     console.error(`[ruleset] Failed to load "${TTRPG_RULESET}": ${e.message} — using built-in 5e defaults.`);
   }
+}
+
+// Addon DM-prompt extensions (manifest `systemAppend` files) ride behind the
+// ruleset's system.md — tone packs, style guides, house rules as data.
+const addonPromptParts = addons.filter(a => a.enabled).map(readSystemAppends).filter(Boolean);
+if (addonPromptParts.length) {
+  rulesetPrompt = [rulesetPrompt || '', ...addonPromptParts].filter(Boolean).join('\n\n');
+  console.log(`[addons] System prompt extended by ${addonPromptParts.length} addon file set(s)`);
 }
 
 // ---- Session ----
@@ -99,6 +128,31 @@ const combat = createCombatEngine({ session, broadcast, applyAndBroadcast, award
 // ---- Turn Engine ----
 
 const turnEngine = createTurnEngine({ session, broadcast, applyAndBroadcast, dmAgent, npcAgent, combat, questEngine, actorTemplates: rulesetActorTemplates, defaultCheck: rulesetDefaultCheck });
+
+// ---- Addon server hooks ----
+// Runs after every engine exists. An addon registers routes, listens to the
+// journal (session.onChange), and applies (semantic) ops via applyEffects —
+// the same expand-then-apply path the engines use.
+
+/** Custom HTTP routes registered by addons: prefix → async (req,res,url)=>handled. */
+const addonRoutes = new Map();
+
+const addonHookCtx = {
+  session, broadcast, applyAndBroadcast, llm, artEngine,
+  dmAgent, npcAgent, questEngine, combat, turnEngine, memoryEngine,
+  worldDir: TTRPG_WORLD,
+  /** Expand semantic ops against current state, then apply + broadcast. */
+  applyEffects(ops, from = 'addon') {
+    return applyAndBroadcast(expandOps(session.entities, ops || []), from);
+  },
+  /** Register a custom HTTP route: handler(req, res, url) under a path prefix. */
+  registerRoute(prefix, handler) {
+    if (typeof prefix === 'string' && typeof handler === 'function') addonRoutes.set(prefix, handler);
+  },
+};
+await runServerHooks(addons, addonHookCtx);
+
+const addonHttp = createAddonHttp({ addons, configFile: addonsConfigFile, rootDir: ROOT_DIR, getHookCtx: () => addonHookCtx });
 
 /**
  * After applying a batch of ops, fire the turn engine for any action ops.
@@ -169,7 +223,16 @@ function broadcast(msg, audience = 'all') {
 function applyAndBroadcast(ops, from) {
   const validation = validateOpBatch(ops);
   if (!validation.ok) return { ok: false, error: validation.error, status: 400 };
-  const result = session.applyOps(validation.ops, from);
+  // Semantic ops (damage/heal/raiseBond/…) expand into canonical ops against
+  // current state; canonical ops pass through untouched. This makes EVERY wire
+  // path (HTTP /op, WS, DMView, addon hooks) speak the full op vocabulary.
+  let expanded;
+  try {
+    expanded = expandOps(session.entities, validation.ops);
+  } catch (e) {
+    return { ok: false, error: `Op expansion failed: ${e.message}`, status: 400 };
+  }
+  const result = session.applyOps(expanded, from);
   if (!result.ok) return { ...result, status: 409 };
   if (result.resnapshot) {
     // A reset re-seeded the world: PC bindings were wiped, so rebind every
@@ -323,6 +386,16 @@ const server = http.createServer(async (req, res) => {
     // GET /sense/check
     if (req.method === 'GET' && url.pathname === '/sense/check') {
       return json(res, { ok: true, findings: sense.check(session) });
+    }
+
+    // /addons — the addon surface (list / static / config).
+    if (await addonHttp(req, res, url)) return;
+
+    // Addon-registered custom routes (first matching prefix wins).
+    for (const [prefix, handler] of addonRoutes) {
+      if (url.pathname.startsWith(prefix)) {
+        if (await handler(req, res, url)) return;
+      }
     }
 
     // 404

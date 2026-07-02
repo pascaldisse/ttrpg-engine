@@ -77,6 +77,39 @@ the reason they left the deep woods is worse than they are.
   locations: settlements, wilds, dungeon chains, a boss lair, side quests):
   procgen skeleton + an LLM pass that charges it with meaning, written in the
   exact shape the engine seeds from. `campaigns/lanternfall/` was made this way.
+- **Addons/plugins** — a whole game can live OUTSIDE this repo: an addon
+  directory ships a campaign + ruleset, a server hook, a client UI plugin, and
+  DM-prompt extensions, all declared in one `addon.json`. Install from the ⚙
+  settings panel (or `addons.json` / `TTRPG_ADDONS`); UI + server hooks load
+  live, worlds seed on the next boot. See *Addons* below.
+
+## Addons
+
+An **addon** is a directory with an `addon.json` manifest — a full game as a
+plugin, no fork needed:
+
+```json
+{ "id": "my-game", "name": "My Game", "version": "0.1.0",
+  "description": "…",
+  "world": "world",              // ships a campaign (scenes + ruleset, same layout as campaigns/*)
+  "ruleset": "my-rules",         // default TTRPG_RULESET when its world runs
+  "client": "client/index.js",   // UI plugin — mount({store, net, view, who, root, serverBase})
+  "server": "server/index.js",   // register(ctx) after boot: routes, journal listeners, applyEffects
+  "systemAppend": ["prompts/style.md"] }  // appended to the DM system prompt
+```
+
+Three ways to install: the **⚙ settings panel** in the player client (install
+by path, enable/disable per browser and per server), the `addons.json` file at
+the repo root (see `addons.example.json`; gitignored), or
+`TTRPG_ADDONS=/path/to/addon npm run dev`. When `TTRPG_WORLD` is unset, the
+first enabled addon that ships a world **becomes the campaign** — one env var
+boots a whole out-of-tree game. Client plugins and server hooks load live at
+runtime; an addon's world/ruleset seeds on the next boot.
+
+Rulesets (in-repo or addon-shipped) may also export `effects` — new semantic
+ops with engine-side clamping (`registerEffects`), accepted on every wire path.
+The server serves addon files at `/addons/<id>/…` and lists installs at
+`GET /addons`.
 
 ## Configuration
 

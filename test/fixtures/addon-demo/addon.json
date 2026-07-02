@@ -1,0 +1,9 @@
+{
+  "id": "addon-demo",
+  "name": "Demo Addon",
+  "version": "1.0.0",
+  "description": "Test fixture: client plugin + server hook + prompt extension.",
+  "client": "client/index.js",
+  "server": "server/index.js",
+  "systemAppend": ["prompts/extra.md"]
+}
